@@ -26,8 +26,6 @@ jobs:
   merge:
     if: github.event.repository.owner.id == github.event.sender.id || ! github.event.sender.id
     runs-on: ubuntu-latest
-    env:
-      GH_USER: "kiddin9"
 
     steps:
       - name: Checkout
@@ -99,7 +97,7 @@ jobs:
           # git_clone https://github.com/kiddin9/openwrt-filebrowser && mvdir openwrt-filebrowser
           # git_clone https://github.com/kiddin9/nginx-ui-openwrt && mvdir nginx-ui-openwrt
           ) &
-          (
+          # (
           # git_clone https://github.com/kiddin9/openwrt-netdata netdata
           # git_clone https://github.com/kiddin9/luci-app-syscontrol
           # git_clone https://github.com/kiddin9/luci-app-chinadns-ng
@@ -109,7 +107,7 @@ jobs:
           # git_clone https://github.com/kiddin9/luci-app-vsftpd
           # git_clone https://github.com/kiddin9/openwrt-subconverter && mvdir openwrt-subconverter
           # git_clone https://github.com/kiddin9/luci-app-syncdial
-          ) &
+          # ) &
           (
           git_clone https://github.com/Openwrt-Passwall/openwrt-passwall && mvdir openwrt-passwall
           git_clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages && mvdir openwrt-passwall-packages

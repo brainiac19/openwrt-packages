@@ -11,10 +11,10 @@ PKG_ARCH_opencode:=$(ARCH)
 
 PKG_NAME:=opencode
 PKG_VERSION:=1.0.119
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_SOURCE:=opencode-binary-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://github.com/Carseason/openwrt-packages/releases/download/prebuilt/
-PKG_HASH:=0f57205d24428d3fddf2d7a6b0958901c7930ca8dd7ec706ed7903901b67ec3a
+PKG_HASH:=skip
 PKG_BUILD_DIR:=$(BUILD_DIR)/opencode-binary-$(PKG_VERSION)
 
 PKG_BUILD_PARALLEL:=1

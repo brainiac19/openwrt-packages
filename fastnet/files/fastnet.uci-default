@@ -1,4 +1,12 @@
 #!/bin/sh
+[ ! -f "/usr/share/ucitrack/luci-app-fastnet.json" ] && {
+    cat > /usr/share/ucitrack/luci-app-fastnet.json << EEOF
+{
+    "config": "fastnet",
+    "init": "fastnet"
+}
+EEOF
+}
 
 uci -q batch <<-EOF_UCI >/dev/null
 	delete ucitrack.@fastnet[-1]

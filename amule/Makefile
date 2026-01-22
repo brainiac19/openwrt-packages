@@ -6,11 +6,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=amule
 PKG_VERSION:=2.3.3
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/amule-project/amule/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=934f79d4dab41c2d1caea31d6c6e10337c409ba5bb8bd6fac6c63e924e82c9b8
+PKG_HASH:=skip
 
 PKG_CONFIG_DEPEDS:= CONFIG_AMULE_CRYPTOPP_STATIC_LINKING
 
@@ -29,6 +29,19 @@ define Package/amule
   URL:=http://www.amule.org/
   DEPENDS:=+antileech +libpng +libpthread +libncurses +libreadline +libwxbase \
 	+libupnp +libbfd +libcryptopp
+endef
+
+define Download/AmuleWebUI
+  URL:=https://github.com/MatteoRagni/AmuleWebUI-Reloaded/archive
+  URL_FILE:=master.zip
+  FILE:=AmuleWebUI.zip
+  HASH:=skip
+endef
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	unzip $(DL_DIR)/AmuleWebUI.zip -d $(PKG_BUILD_DIR)
+	
 endef
 
 CONFIGURE_ARGS+= \
@@ -72,12 +85,16 @@ endef
 
 define Package/amule/install
 	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_DIR) $(1)/usr/share/amule/webserver
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/amulecmd $(1)/usr/bin/amulecmd
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/amuled $(1)/usr/bin/amuled
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/amuleweb $(1)/usr/bin/amuleweb
+	$(CP) $(PKG_BUILD_DIR)/src/webserver/default $(1)/usr/share/amule/webserver
+	$(CP) $(PKG_BUILD_DIR)/AmuleWebUI-Reloaded-master $(1)/usr/share/amule/webserver/AmuleWebUI-Reloaded
 
 	$(INSTALL_DIR) $(1)/usr/share
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/amule $(1)/usr/share/
 endef
 
+$(eval $(call Download,AmuleWebUI))
 $(eval $(call BuildPackage,amule))

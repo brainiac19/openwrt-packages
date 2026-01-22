@@ -1,12 +1,14 @@
 #!/bin/sh
 
+grep -qv "myvpn" /etc/config/openvpn && grep -q "myvpn" /etc/config/openvpn-opkg && cp -f /etc/config/openvpn-opkg /etc/config/openvpn
+
 openvpn_port="$(uci -q get openvpn.myvpn.port)"
 [ -z "$openvpn_port" ] && openvpn_port=1194
 
 uci -q batch <<-EOF >/dev/null
 	delete network.vpn0
 	set network.vpn0=interface
-	set network.vpn0.ifname='tun0'
+	set network.vpn0.device='tun0'
 	set network.vpn0.proto='none'
 	
 	commit network

@@ -14,6 +14,6 @@ define Package/luci-app-3cat/conffiles
 /etc/config/3cat
 endef
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

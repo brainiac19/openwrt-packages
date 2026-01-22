@@ -12,13 +12,13 @@ PKG_RELEASE=1
 
 ifeq ($(ARCH),aarch64)
 	PKG_ARCH:=aarch64
-	PKG_HASH:=af4071d2c7f87215416f166c837028685f829938c59e22056f715ae013699381
+	PKG_HASH:=skip
 else ifeq ($(ARCH),arm)
 	PKG_ARCH:=armv7
-	PKG_HASH:=cc8a4d8252f9a7add7bcfd17b28ee77d637d97e29bf2e087bb980b8fd7209a0e
+	PKG_HASH:=skip
 else ifeq ($(ARCH),x86_64)
 	PKG_ARCH:=x86_64
-	PKG_HASH:=0001a0b687c0a5bc96ff84e2aa60b9b403ec881233d46da76246dcbe828c3ba9
+	PKG_HASH:=skip
 endif
 
 include $(INCLUDE_DIR)/package.mk

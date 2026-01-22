@@ -12,6 +12,6 @@ LUCI_TITLE:=LuCI support for strongSwan via swanctl
 LUCI_DESCRIPTION:=Status and configuration for strongSwan based on swanctl
 LUCI_DEPENDS:=+strongswan-swanctl +swanmon
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

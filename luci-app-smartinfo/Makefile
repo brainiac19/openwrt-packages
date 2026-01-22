@@ -10,6 +10,6 @@ LUCI_DEPENDS:=+smartmontools
 LUCI_PKGARCH:=all
 PKG_MAINTAINER:=animefansxj <af_xj@hotmail.cn>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

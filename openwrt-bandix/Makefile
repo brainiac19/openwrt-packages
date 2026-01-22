@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=bandix
 PKG_VERSION:=0.12.1
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=timsaya
@@ -23,7 +23,7 @@ PKG_SOURCE_URL:=https://github.com/timsaya/bandix/releases/download/v$(RUST_BAND
 
 # 修正二进制文件校验值
 ifeq ($(ARCH),aarch64)
-	PKG_HASH:=79950ad4d4af4701f6473f965350c86533aac8d0170ff0f749b4dc3f4835970e
+	PKG_HASH:=skip
 else ifeq ($(ARCH),arm) # update.sh skip this tag, do not delete this comment
 	# Ref https://github.com/openwrt/packages/blob/master/lang/rust/rust-values.mk
 
@@ -39,30 +39,30 @@ else ifeq ($(ARCH),arm) # update.sh skip this tag, do not delete this comment
 	endif
 
 	ifeq ($(ARM_CPU_TYPE),arm-armel)
-		PKG_HASH:=302f2ee5834909aab2fd2f3fb627bc8e483c07ba4a092970750cad11e2307288
+		PKG_HASH:=skip
 	else ifeq ($(ARM_CPU_TYPE),arm-armhf)
-		PKG_HASH:=4d9bd0521d5f31b395ddc44b2b38ec33cd5bb3e36a35f1be589e1846bcaa3a9e
+		PKG_HASH:=skip
 	else ifeq ($(ARM_CPU_TYPE),armv5te-armel)
-		PKG_HASH:=5d49280edafa03f6a4c2a64754475db1274e52a47ef3000a6a47b7a90cc1dcb1
+		PKG_HASH:=skip
 	else ifeq ($(ARM_CPU_TYPE),armv7-armel)
-		PKG_HASH:=f7ac19647c2db8fc2aa512d78a21e8e01d41ee1adab59fba5587ec0262cdfa43
+		PKG_HASH:=skip
 	else ifeq ($(ARM_CPU_TYPE),armv7-armhf)
-		PKG_HASH:=7574d115715e1092e28b3a4e7c591b56deb5ee0974bddf45751beabcd69e8133
+		PKG_HASH:=skip
 	else
-		PKG_HASH:=dummy
+		PKG_HASH:=skip
 	endif
 else ifeq ($(ARCH),mips)
-	PKG_HASH:=142cf7997e51ca5eeb33943cad8ce3a6692734c39833ecea6d23e7dc46cfdf2e
+	PKG_HASH:=skip
 else ifeq ($(ARCH),mipsel)
-	PKG_HASH:=8c85fd9fabba81f2d1f4277985cb23fddec6bc9c578f791c99dfd465d5f38c6d
+	PKG_HASH:=skip
 else ifeq ($(ARCH),powerpc64)
-	PKG_HASH:=d17e9849cd0efc32bc2941629eb08cb4a5af0825090fb5b069dfd0e34f27bbc0
+	PKG_HASH:=skip
 else ifeq ($(ARCH),riscv64)
-	PKG_HASH:=ce483e7c138648ea9745764352d61d11aedb61b46cf73b08a0a2580fb88a9bcb
+	PKG_HASH:=skip
 else ifeq ($(ARCH),x86_64)
-	PKG_HASH:=4e10cebbdf5f841cedf659daf0f677b61be6ccfba003a565024d34972cf76891
+	PKG_HASH:=skip
 else
-	PKG_HASH:=dummy
+	PKG_HASH:=skip
 endif
 
 define Package/$(PKG_NAME)

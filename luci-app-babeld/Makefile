@@ -6,6 +6,6 @@ LUCI_DEPENDS:=+luci-base +babeld
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Nick Hainke <vincent@systemli.org>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

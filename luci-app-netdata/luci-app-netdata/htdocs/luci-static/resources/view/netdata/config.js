@@ -1,3 +1,4 @@
+// Copyright (C) 2021-2025 sirpdboy herboy2008@gmail.com https://github.com/sirpdboy/luci-app-netdata
 'use strict';
 'require view';
 'require fs';
@@ -20,7 +21,7 @@ handleReset: null,
 			document.querySelector('textarea').value = value;
 			ui.addNotification(null, E('p', _('Contents have been saved.')), 'info');
 
-			return fs.exec('/etc/init.d/netdata', [ 'reload' ]);
+			return fs.exec('/etc/init.d/netdata', [ 'restart' ]);
 		}).catch((e) => {
 			ui.addNotification(null, E('p', _('Unable to save contents: %s').format(e.message)));
 		});

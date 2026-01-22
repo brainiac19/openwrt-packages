@@ -7,7 +7,6 @@ LUCI_DEPENDS:=+uqmi
 
 PKG_LICENSE:=GPLv3
 PKG_VERSION:=1.0.1
-PKG_RELEASE:=1
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

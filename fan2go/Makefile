@@ -2,11 +2,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=fan2go
 PKG_VERSION:=0.11.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/markusressel/fan2go/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=02baca96ed1be6824e9bf6ca33198f94cc9319af44e04677a7f9c55c60abb319
 
 PKG_LICENSE:=AGPL-3.0
 PKG_LICENSE_FILES:=LICENSE
@@ -21,7 +21,7 @@ GO_PKG_LDFLAGS_X:=$(GO_PKG)/cmd/global.Version=$(PKG_VERSION)
 GO_PKG_TAGS:=netgo,disable_nvml
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/fan2go
   SECTION:=utils

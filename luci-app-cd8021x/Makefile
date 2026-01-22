@@ -6,12 +6,12 @@ LUCI_DEPENDS:=+luci-compat +wpad
 
 PKG_NAME:=luci-app-cd8021x
 PKG_VERSION:=1.2.2
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_LICENSE:=GPLv3
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=max0y <askmaxwork@gmail.com>
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

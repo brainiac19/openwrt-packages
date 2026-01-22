@@ -1,12 +1,4 @@
 #!/bin/sh 
-[ ! -f "/usr/share/ucitrack/luci-app-nginx-ha.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-nginx-ha.json << EEOF
-{
-    "config": "nginx-ha",
-    "init": "nginx-ha"
-}
-EEOF
-}
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@nginx-ha[-1]

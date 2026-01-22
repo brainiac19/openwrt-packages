@@ -1,12 +1,4 @@
 #!/bin/sh
-[ ! -f "/usr/share/ucitrack/luci-app-mptcp.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-mptcp.json << EEOF
-{
-    "config": "mptcp",
-    "init": "mptcp"
-}
-EEOF
-}
 if [ "$(uci -q get network.globals.mptcp_path_manager)" = "" ]; then
 	uci -q batch <<-EOF >/dev/null
 	set network.globals.multipath='enable'

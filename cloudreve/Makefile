@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cloudreve
-PKG_VERSION:=4.11.1
-PKG_RELEASE:=1
+PKG_VERSION:=4.9.2
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/cloudreve/Cloudreve.git
-PKG_SOURCE_VERSION:=bc6845bd742c3a2f702d098191261367edadf877
-PKG_MIRROR_HASH:=skip
+PKG_SOURCE_VERSION:=$(PKG_VERSION)
+PKG_MIRROR_HASH:=d88edc8af20a5cce662689a297123d1b4d504b0ca0499942068bdbb3c9ec8ea7
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
@@ -27,7 +27,7 @@ GO_PKG_LDFLAGS_X:= \
 	$(GO_PKG)/application/constants.LastCommit=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/cloudreve
   SECTION:=net

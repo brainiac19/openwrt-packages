@@ -1,12 +1,4 @@
 #!/bin/sh
-[ ! -f "/usr/share/ucitrack/luci-app-timecontrol.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-timecontrol.json << EEOF
-{
-    "config": "timecontrol",
-    "init": "timecontrol"
-}
-EEOF
-}
 chmod +x  /etc/init.d/timecontrol /usr/bin/timecontrol*
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@timecontrol[-1]

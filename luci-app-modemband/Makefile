@@ -12,9 +12,8 @@ LUCI_DEPENDS:=+modemband
 
 PKG_NAME:=luci-app-modemband
 PKG_VERSION:=1.0.25.20240519
-PKG_RELEASE:=1
 PKG_MAINTAINER:=Rafał Wabik <4Rafal@gmail.com>
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

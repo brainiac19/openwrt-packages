@@ -6,7 +6,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-rclone
 PKG_VERSION:=1.4.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 LUCI_TITLE:=LuCI support for Rclone
 LUCI_DEPENDS:=+luci-compat +rclone-config \
@@ -30,6 +30,6 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_rclone-ng
 	default y
 endef
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

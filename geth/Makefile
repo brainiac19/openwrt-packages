@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=go-ethereum
-PKG_VERSION:=1.16.8
-PKG_RELEASE:=1
+PKG_VERSION:=1.10.20
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/ethereum/go-ethereum/tar.gz/v${PKG_VERSION}?
-PKG_HASH:=skip
+PKG_HASH:=15ff54f0a4444eb9faa7c1f6219d3a1db5d547178b4eef6679bb601abc681f9d
 
 PKG_MAINTAINER:=Mislav Novakovic <mislav.novakovic@sartura.hr>
 PKG_LICENSE:=GPL-3.0-or-later LGPL-3.0-or-later
@@ -29,7 +29,7 @@ GO_PKG_BUILD_PKG:=github.com/ethereum/go-ethereum/cmd/geth
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/geth
   SECTION:=net

@@ -1,12 +1,4 @@
 #!/bin/sh
-[ ! -f "/usr/share/ucitrack/luci-app-minieap.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-minieap.json << EEOF
-{
-    "config": "minieap",
-    "init": "minieap"
-}
-EEOF
-}
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@minieap[-1]

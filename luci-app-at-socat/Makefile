@@ -13,7 +13,6 @@ LUCI_DESCRIPTION:=LuCI JS interface for sending at commands using socat.
 LUCI_DEPENDS:=+socat
 LUCI_PKGARCH:=all
 PKG_VERSION:=1.0.2
-PKG_RELEASE:=1
 
 define Package/$(PKG_NAME)/conffiles
 /etc/modem/atsocatcommands.user

@@ -5,12 +5,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gost
-PKG_VERSION:=3.2.6
-PKG_RELEASE:=1
+PKG_VERSION:=3.2.2
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/go-gost/gost/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=1b127ed18131a6851c5d1a8a72dfa07fd3ab2452eeec22baa62f60c2ed221cb5
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
@@ -25,7 +25,7 @@ GO_PKG_BUILD_PKG:=$(GO_PKG)/cmd/gost
 GO_PKG_LDFLAGS_X:=main.version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/gost
   SECTION:=net

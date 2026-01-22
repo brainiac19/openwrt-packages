@@ -44,7 +44,3 @@ stop_service(){
 	timecontrol stop
 }
 
-
-reload_service() {
-	restart
-}

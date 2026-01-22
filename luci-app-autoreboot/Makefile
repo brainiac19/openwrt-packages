@@ -10,6 +10,6 @@ define Package/luci-app-autoreboot/conffiles
 /etc/config/autoreboot
 endef
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

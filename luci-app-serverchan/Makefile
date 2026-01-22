@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-serverchan
 PKG_VERSION:=2.01.4
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=tty228 <tty228@yeah.net>
 
@@ -18,6 +18,6 @@ define Package/$(PKG_NAME)/conffiles
 /usr/bin/serverchan/api/ipv6.list
 endef
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

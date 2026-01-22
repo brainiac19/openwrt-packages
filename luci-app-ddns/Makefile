@@ -14,6 +14,6 @@ PKG_MAINTAINER:=Ansuel Smith <ansuelsmth@gmail.com>
 LUCI_TITLE:=LuCI Support for Dynamic DNS Client (ddns-scripts)
 LUCI_DEPENDS:=+luci-base +ddns-scripts
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

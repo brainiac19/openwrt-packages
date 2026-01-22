@@ -10,6 +10,6 @@ LUCI_TITLE:=LuCI support for ngrokc.
 LUCI_DESCRIPTION:=LuCI Support for ngrokc.
 LUCI_DEPENDS:=+luci-compat +ngrokc
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

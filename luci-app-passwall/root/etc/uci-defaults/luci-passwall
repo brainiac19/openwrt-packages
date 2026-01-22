@@ -1,12 +1,4 @@
 #!/bin/sh
-[ ! -f "/usr/share/ucitrack/luci-app-passwall.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-passwall.json << EEOF
-{
-    "config": "passwall",
-    "init": "passwall"
-}
-EEOF
-}
 
 if [ -e "/etc/config/ucitrack" ]; then
     uci -q batch <<-EOF

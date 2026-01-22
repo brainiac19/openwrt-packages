@@ -14,7 +14,7 @@ LOG="/var/$NAME_log.log"
 
 
 if [ x$(uci get $NAME.@$NAME[0].ifname 2>/dev/null) = 'x1' ]; then
-    ifname=$(uci -q get network.lan.ifname)
+    ifname=$(uci -q get network.lan.device)
     [ "x$ifname" = "x" ] && ifname="device" || ifname="ifname"
     dev=$(uci -q get network.wan.$ifname)
     [ ! "$dev" ] && dev=br-lan

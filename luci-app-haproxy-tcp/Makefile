@@ -10,10 +10,10 @@ LUCI_DEPENDS:=+haproxy
 LUCI_PKGARCH:=all
 PKG_NAME:=luci-app-haproxy-tcp
 PKG_VERSION=1.4
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_MAINTAINER:=Alex Zhuo <1886090@gmail.com>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh

@@ -16,6 +16,6 @@ define Package/luci-app-smartvpn/conffiles
 /etc/smartvpn/user_hongkong.txt
 endef
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

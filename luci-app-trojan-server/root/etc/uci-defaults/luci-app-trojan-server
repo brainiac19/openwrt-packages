@@ -1,4 +1,12 @@
 #!/bin/sh
+[ ! -f "/usr/share/ucitrack/luci-app-trojan_server.json" ] && {
+    cat > /usr/share/ucitrack/luci-app-trojan_server.json << EEOF
+{
+    "config": "trojan_server",
+    "init": "trojan_server"
+}
+EEOF
+}
 
 uci -q batch <<-EOF >/dev/null
 	delete firewall.trojan_server

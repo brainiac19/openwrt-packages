@@ -12,7 +12,7 @@ LUCI_TITLE:=LuCI support for Task Plan setting
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=2.3.1
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 
 define Package/$(PKG_NAME)/conffiles

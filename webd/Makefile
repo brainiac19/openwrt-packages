@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=webd
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_VERSION:=20240223
 PKG_VERSION_MEDIATEK_FILO:=20240710
@@ -101,7 +101,7 @@ ifeq ($(strip $(TARGET_ARCH)$(TARGET_BOARD)),)
 endif
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(TARGET_ARCH)-openwrt-linux-$(TARGET_BOARD).tar.gz
-PKG_SOURCE_URL:=https://webd.cf/webd/$(PKG_VERSION)/
+PKG_SOURCE_URL:=https://webd.cf/webd/webd_dl/$(PKG_VERSION)/
 PKG_HASH:=skip
 
 UNTAR_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)

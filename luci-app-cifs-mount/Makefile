@@ -13,6 +13,6 @@ define Package/luci-app-cifs-mount/conffiles
 /etc/config/cifs-mount
 endef
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

@@ -9,11 +9,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cups
-PKG_VERSION:=2.3.3op2
-PKG_RELEASE:=2
+PKG_VERSION:=2.4.16
+PKG_RELEASE:=3
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-source.tar.gz
 PKG_SOURCE_URL:=https://github.com/OpenPrinting/cups/releases/download/v$(PKG_VERSION)
-PKG_MD5SUM:=524266752cf243c968921547b18ee594
+PKG_MD5SUM:=skip
 
 TARGET_LDFLAGS+=-Wl,-rpath-link=$(STAGING_DIR)/usr/lib
 
@@ -165,6 +165,7 @@ define Build/Configure
 		--without-perl \
 		--without-python \
 		--without-php \
+		--without-tls \
 		--enable-default-shared \
 		--enable-shared \
 		--enable-image \

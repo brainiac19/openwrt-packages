@@ -12,11 +12,11 @@ LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-dnsforwarder
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=GPL-3.0
 PKG_MAINTAINER:=Dennis <openwrt@tossp.com>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

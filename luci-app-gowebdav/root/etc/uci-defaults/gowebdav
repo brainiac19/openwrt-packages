@@ -1,4 +1,12 @@
 #!/bin/sh
+[ ! -f "/usr/share/ucitrack/luci-app-gowebdav.json" ] && {
+    cat > /usr/share/ucitrack/luci-app-gowebdav.json << EEOF
+{
+    "config": "gowebdav",
+    "init": "gowebdav"
+}
+EEOF
+}
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@gowebdav[-1]

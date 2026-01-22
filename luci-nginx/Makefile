@@ -15,7 +15,6 @@ LUCI_DEPENDS:= \
 	+IPV6:luci-proto-ipv6 \
 	+luci-app-firewall \
 	+luci-app-package-manager \
-	+luci-app-attendedsysupgrade \
 	+luci-mod-admin-full \
 	+luci-proto-ppp \
 	+luci-theme-bootstrap \
@@ -26,6 +25,6 @@ LUCI_DEPENDS:= \
 PKG_LICENSE:=Apache-2.0
 PKG_PROVIDES:=luci-ssl-nginx
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

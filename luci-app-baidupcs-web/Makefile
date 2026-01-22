@@ -15,10 +15,10 @@ LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-baidupcs-web
 PKG_VERSION:=1.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_MAINTAINER:=KFERMercer <KFER.Mercer@gmail.com>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

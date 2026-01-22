@@ -1,14 +1,13 @@
-# Copyright (C) 2016 Openwrt.org
-#
-# This is free software, licensed under the Apache License, Version 2.0 .
+# SPDX-License-Identifier: Apache-2.0
 #
 
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=LuCI support for VSFTPD
-LUCI_DEPENDS:=+luci-compat +vsftpd
+PKG_LICENSE:=Apache-2.0
 
-include ../../luci.mk
+LUCI_TITLE:=LuCI app for vsftpd
+LUCI_DEPENDS:=+vsftpd
+
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
-

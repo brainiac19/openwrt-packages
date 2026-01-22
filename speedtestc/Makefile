@@ -8,7 +8,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=speedtestc
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_URL:=https://github.com/mobrembski/SpeedTestC.git
 PKG_SOURCE_PROTO:=git

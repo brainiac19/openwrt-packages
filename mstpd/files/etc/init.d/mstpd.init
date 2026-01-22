@@ -122,7 +122,3 @@ reload_service() {
 	return 0
 }
 
-
-service_triggers() {
-	procd_add_reload_trigger "mstpd"
-}

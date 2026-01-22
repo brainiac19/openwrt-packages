@@ -18,6 +18,6 @@ define Package/luci-app-oled/conffiles
 /etc/config/oled
 endef
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

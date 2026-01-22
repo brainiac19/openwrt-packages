@@ -8,6 +8,6 @@ LUCI_TITLE:=LuCI app for AList
 LUCI_DEPENDS:=+alist
 LUCI_PKGARCH:=all
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

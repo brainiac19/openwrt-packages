@@ -1,12 +1,4 @@
 #!/bin/sh
-[ ! -f "/usr/share/ucitrack/luci-app-socat.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-socat.json << EEOF
-{
-    "config": "socat",
-    "init": "socat"
-}
-EEOF
-}
 
 [ -f "/etc/config/ucitrack" ] && {
 uci -q batch <<-EOF >/dev/null

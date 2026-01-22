@@ -8,7 +8,7 @@ include $(TOPDIR)/rules.mk
 LUCI_TITLE:=LuCI support for Amule
 LUCI_DEPENDS:=+luci-compat +amule
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
 

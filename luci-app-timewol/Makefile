@@ -9,9 +9,9 @@ LUCI_TITLE:=LuCI support for Timewol
 LUCI_DEPENDS:=+luci-compat
 
 PKG_VERSION:=20190309
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
 

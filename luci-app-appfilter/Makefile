@@ -8,8 +8,8 @@ LUCI_TITLE:=LuCI support for OAF
 LUCI_DEPENDS:=+appfilter +luci-compat
 
 PKG_VERSION:=6.1.2
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

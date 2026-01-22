@@ -9,7 +9,7 @@ include $(TOPDIR)/rules.mk
 LUCI_TITLE:=Luci for PS3NETSRV
 LUCI_DEPENDS:=+luci-compat +ps3netsrv
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
 

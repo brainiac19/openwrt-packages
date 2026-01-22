@@ -9,18 +9,18 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supervisor
 PKG_VERSION:=4.1.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PYPI_NAME:=supervisor
-PKG_HASH:=skip
+PKG_HASH:=2dc86fe0476e945e61483d614ceb2cf4f93b95282eb243bdf792621994360383
 
 PKG_MAINTAINER:=[CTCGFW]Project OpenWrt <contact@project-openwrt.eu.org>
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
 
-include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
+include ../../lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+include ../../lang/python/python3-package.mk
 
 define Package/supervisor
   SECTION:=utils

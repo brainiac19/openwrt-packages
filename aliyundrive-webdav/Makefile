@@ -7,13 +7,13 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aliyundrive-webdav
 PKG_VERSION:=2.3.3
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://github.com/messense/aliyundrive-webdav.git
 PKG_SOURCE_VERSION:=6e8eba62b4e50acf89681e3a67a3a693186dcd05
-PKG_MIRROR_HASH:=skip
+PKG_MIRROR_HASH:=b6b1099c90818c5eb322bdae105d3df8d7a954d6e9ee7798c3c2412eed528640
 
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=messense <messense@icloud.com>
@@ -23,7 +23,7 @@ PKG_BUILD_DEPENDS:=rust/host
 RUST_PKG_FEATURES:=rustls-tls atomic64 native-tls native-tls-vendored
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
+include ../../lang/rust/rust-package.mk
 
 define Package/aliyundrive-webdav
   SECTION:=multimedia

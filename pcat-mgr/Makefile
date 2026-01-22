@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pcat-mgr
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://gitlab.com/CoiaPrant/pcat-mgr.git
 PKG_SOURCE_DATE:=2025-08-01
 PKG_SOURCE_VERSION:=754b4f0b783a44d48d91e2dbd6c1dfca667a3049
-PKG_MIRROR_HASH:=skip
+PKG_MIRROR_HASH:=04f610b2dd55a7f355752c46c61fe6d8e25c643f146c8cfb503c75d8d2505df7
 
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
@@ -25,7 +25,7 @@ PKG_BUILD_FLAGS:=no-mips16
 GO_PKG:=pcat-mgr
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/pcat-mgr
   SECTION:=utils

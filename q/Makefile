@@ -2,11 +2,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=q
 PKG_VERSION:=0.19.11
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/natesales/q/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=c13dbb556f2eaa26c7bd66632a3ced4026f26486f6563104e919e3cc6d7776ce
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
@@ -20,7 +20,7 @@ GO_PKG:=github.com/natesales/q
 GO_PKG_LDFLAGS_X:= main.version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+include ../../lang/golang/golang-package.mk
 
 define Package/q
   SECTION:=net

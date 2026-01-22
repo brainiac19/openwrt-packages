@@ -26,6 +26,6 @@ LUCI_DEPENDS:= \
 PKG_LICENSE:=Apache-2.0
 PKG_PROVIDES:=luci-ssl-nginx
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

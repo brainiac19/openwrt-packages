@@ -6,6 +6,6 @@ LUCI_TITLE:=redsocks config file editor
 LUCI_DEPENDS:=+luci-base
 LUCI_PKGARCH:=all
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

@@ -1,12 +1,4 @@
 #!/bin/sh /etc/rc.common
-[ ! -f "/usr/share/ucitrack/luci-app-add.json" ] && {
-    cat > /usr/share/ucitrack/luci-app-add.json << EEOF
-{
-    "config": "add",
-    "init": "add"
-}
-EEOF
-}
 # Copyright (c) 2019-2024 vernesong
 
 START=99
@@ -3536,7 +3528,7 @@ get_config()
 
    lan_interface_name=$(uci_get_config "lan_interface_name" || echo 0)
    if [ "$lan_interface_name" = "0" ]; then
-      lan_ip=$(uci -q get network.lan.ipaddr 2>/dev/null | awk -F '/' '{print $1}' 2>/dev/null | tr -d '\n' || ip address show $(uci -q -p /tmp/state get network.lan.device || uci -q -p /tmp/state get network.lan.device) | grep -w "inet" 2>/dev/null |grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -1 | tr -d '\n' || ip addr show 2>/dev/null | grep -w 'inet' | grep 'global' | grep 'brd' | grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -n 1 | tr -d '\n')
+      lan_ip=$(uci -q get network.lan.ipaddr 2>/dev/null | awk -F '/' '{print $1}' 2>/dev/null | tr -d '\n' || ip address show $(uci -q -p /tmp/state get network.lan.ifname || uci -q -p /tmp/state get network.lan.device) | grep -w "inet" 2>/dev/null |grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -1 | tr -d '\n' || ip addr show 2>/dev/null | grep -w 'inet' | grep 'global' | grep 'brd' | grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -n 1 | tr -d '\n')
    else
       lan_ip=$(ip address show $lan_interface_name 2>/dev/null | grep -w "inet" 2>/dev/null | grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -1 | tr -d '\n')
    fi

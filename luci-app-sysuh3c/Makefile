@@ -7,6 +7,6 @@ include $(TOPDIR)/rules.mk
 LUCI_TITLE:=LuCI support for SYSU H3C 802.1X Client
 LUCI_DEPENDS:=+sysuh3c
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

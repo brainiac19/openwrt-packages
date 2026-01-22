@@ -10,6 +10,6 @@ LUCI_DEPENDS:=+luci-compat +scutclient
 
 PKG_LICENSE:=Apache-2.0
 
-include $(TOPDIR)/feeds/luci/luci.mk
+include ../../luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

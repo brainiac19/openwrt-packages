@@ -1,6 +1,8 @@
 name: Sync Upstream
 permissions:
   contents: write
+  actions: write
+  
 on:
   workflow_dispatch:
 
@@ -47,7 +49,6 @@ jobs:
 
       - name: Commit changes
         run: |
-          cat .github/workflows/upstream.yml
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           if ! git diff --quiet .github; then

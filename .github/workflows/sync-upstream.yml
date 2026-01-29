@@ -10,12 +10,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Download and extract upstream .github directory
+      - name: Download upstream .github directory
         run: |
-          wget -O upstream.zip "https://download-directory.github.io?url=https://github.com/kiddin9/kwrt-packages/tree/main/.github"
-          unzip upstream.zip
-          # The zip contains a directory named '.github', so we copy its contents.
-          cp -r .github/* ./.github/
+          # We need to checkout the .github directory from the upstream repo
+          # svn is pre-installed on github runners
+          svn export https://github.com/kiddin9/kwrt-packages/trunk/.github upstream-github
+          cp -r upstream-github/* ./.github/
 
       - name: Install yq
         run: |

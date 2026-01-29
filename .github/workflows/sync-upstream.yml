@@ -1,5 +1,6 @@
 name: Sync Upstream
-
+permissions:
+  contents: write
 on:
   workflow_dispatch:
 

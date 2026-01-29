@@ -44,6 +44,7 @@ jobs:
           .on = {"workflow_run": {"workflows": ["Sync Upstream"], "types": ["completed"]}} |
           .jobs.merge.if |= sub(" \\|\\| github\\.event\\.sender\\.id == '\''119362912'\''"; "") |
           (.jobs.merge.steps[] | select(.uses == "de-vri-es/setup-git-credentials@v2").with.credentials) = "https://${{ '${{ github.actor }}' }}:${{ '${{ secrets.GH_TOKEN }}' }}@github.com/" |
+          (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("git_clone https://github.com/kiddin9/openwrt-bypass"; "# git_clone https://github.com/kiddin9/openwrt-bypass") |
           (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("kiddin9/luci-app-adguardhome"; "rufengsuixing/luci-app-adguardhome") |
           (.jobs.merge.steps[] | select(.name == "Apply patches").run) |= sub(" \\|\\|.*"; "") |
           (.jobs.merge.steps[] | select(.name == "Modify").run) |= sub("TOKEN_KIDDIN9"; "GH_TOKEN")

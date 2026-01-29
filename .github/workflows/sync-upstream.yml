@@ -10,19 +10,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Sparse checkout of upstream repo
+      - name: Download and extract upstream .github directory
         run: |
-          mkdir upstream-repo
-          cd upstream-repo
-          git init
-          git remote add origin https://github.com/kiddin9/kwrt-packages
-          git config core.sparseCheckout true
-          echo ".github" >> .git/info/sparse-checkout
-          git pull --depth=1 origin master
-
-      - name: Copy patched workflows
-        run: |
-          cp -r upstream-repo/.github/* ./.github/
+          wget -O upstream.zip "https://download-directory.github.io?url=https://github.com/kiddin9/kwrt-packages/tree/main/.github"
+          unzip upstream.zip
+          # The zip contains a directory named '.github', so we copy its contents.
+          cp -r .github/* ./.github/
 
       - name: Install yq
         run: |

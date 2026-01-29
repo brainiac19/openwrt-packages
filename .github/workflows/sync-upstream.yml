@@ -10,12 +10,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Download upstream .github directory
+      - name: Sparse checkout of upstream repo
         run: |
-          # We need to checkout the .github directory from the upstream repo
-          # svn is pre-installed on github runners
-          svn export https://github.com/kiddin9/kwrt-packages/trunk/.github upstream-github
-          cp -r upstream-github/* ./.github/
+          mkdir upstream-repo
+          cd upstream-repo
+          git init
+          git remote add origin https://github.com/kiddin9/kwrt-packages
+          git config core.sparseCheckout true
+          echo ".github" >> .git/info/sparse-checkout
+          git pull --depth=1 origin main
+
+      - name: Copy patched workflows
+        run: |
+          cp -r upstream-repo/.github/* ./.github/
 
       - name: Install yq
         run: |

@@ -7,6 +7,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://${{ github.actor }}:${{ secrets.GH_TOKEN }}@github.com/
+
       - name: Checkout
         uses: actions/checkout@v3
 

@@ -31,7 +31,7 @@ jobs:
 
       - name: Apply Customizations with yq
         run: |
-          yq -i'
+          yq -i '
           .on = {"workflow_run": {"workflows": ["Sync Upstream"], "types": ["completed"]}} |
           .jobs.merge.if |= sub(" \\|\\| github\\.event\\.sender\\.id == '\''119362912'\''"; "") |
           (.jobs.merge.steps[] | select(.uses == "de-vri-es/setup-git-credentials@v2").with.credentials) = "https://${{ github.actor }}:${{ secrets.GH_TOKEN }}@github.com/" |

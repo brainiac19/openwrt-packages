@@ -1,0 +1,51 @@
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Sparse checkout of upstream repo
+        run: |
+          mkdir upstream-repo
+          cd upstream-repo
+          git init
+          git remote add origin https://github.com/kiddin9/kwrt-packages
+          git config core.sparseCheckout true
+          echo ".github" >> .git/info/sparse-checkout
+          git pull --depth=1 origin master
+
+      - name: Copy patched workflows
+        run: |
+          cp -r upstream-repo/.github/* ./.github/
+
+      - name: Install yq
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+
+      - name: Apply Customizations with yq
+        run: |
+          yq -i'
+          .on = {"workflow_run": {"workflows": ["Sync Upstream"], "types": ["completed"]}} |
+          .jobs.merge.if |= sub(" \\|\\| github\\.event\\.sender\\.id == '\''119362912'\''"; "") |
+          (.jobs.merge.steps[] | select(.uses == "de-vri-es/setup-git-credentials@v2").with.credentials) = "https://${{ github.actor }}:${{ secrets.GH_TOKEN }}@github.com/" |
+          (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("kiddin9/luci-app-adguardhome"; "rufengsuixing/luci-app-adguardhome") |
+          (.jobs.merge.steps[] | select(.name == "Apply patches").run) |= sub(" \\|\\|.*"; "") |
+          (.jobs.merge.steps[] | select(.name == "Modify").run) |= sub("TOKEN_KIDDIN9"; "GH_TOKEN")
+          ' .github/workflows/upstream.yml
+
+      - name: Commit changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet .github; then
+            git add .github
+            git commit -m "Sync and patch upstream workflows"
+            git push
+          fi

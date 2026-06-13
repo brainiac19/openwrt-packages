@@ -14,20 +14,17 @@
 
 --- a/luci-app-passwall/Makefile
 +++ b/luci-app-passwall/Makefile
-@@ -39,7 +39,30 @@ LUCI_PKGARCH:=all
+@@ -35,7 +35,25 @@ LUCI_PKGARCH:=all
  LUCI_DEPENDS:=+coreutils +coreutils-base64 +coreutils-nohup +curl \
  	+chinadns-ng +dns2socks +dnsmasq-full +ip-full \
  	+libuci-lua +lua +luci-compat +luci-lib-jsonc \
--	+microsocks +resolveip +tcping
-+	+microsocks +resolveip +tcping \
+-	+microsocks +resolveip +tcping +lyaml
++	+microsocks +resolveip +tcping +lyaml \
 +	+ipt2socks \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Geoview:geoview \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Haproxy:haproxy \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Hysteria:hysteria \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_NaiveProxy:naiveproxy \
-+	+PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Client:shadowsocks-libev-ss-local \
-+	+PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Client:shadowsocks-libev-ss-redir \
-+	+PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Server:shadowsocks-libev-ss-server \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Client:shadowsocks-rust-sslocal \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Server:shadowsocks-rust-ssserver \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Client:shadowsocksr-libev-ssr-local \
@@ -35,8 +32,6 @@
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Server:shadowsocksr-libev-ssr-server \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_Simple_Obfs:simple-obfs-client \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_SingBox:sing-box \
-+	+PACKAGE_$(PKG_NAME)_INCLUDE_Trojan_Plus:trojan-plus \
-+	+PACKAGE_$(PKG_NAME)_INCLUDE_tuic_client:tuic-client \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata:v2ray-geoip \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata:v2ray-geosite \
 +	+PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Plugin:v2ray-plugin \
@@ -46,7 +41,7 @@
  
  define Package/$(PKG_NAME)/config
  menu "Configuration"
-@@ -74,8 +97,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Geoview
+@@ -70,8 +88,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Geoview
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_Haproxy
  	bool "Include Haproxy"
@@ -56,19 +51,7 @@
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_Hysteria
  	bool "Include Hysteria"
-@@ -90,19 +112,15 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_NaiveProxy
- 
- config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Client
- 	bool "Include Shadowsocks Libev Client"
--	select PACKAGE_shadowsocks-libev-ss-local
--	select PACKAGE_shadowsocks-libev-ss-redir
- 	default y
- 
- config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Server
- 	bool "Include Shadowsocks Libev Server"
--	select PACKAGE_shadowsocks-libev-ss-server
- 	default y if aarch64||arm||i386||x86_64
- 
+@@ -87,7 +104,6 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_NaiveProxy
  config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Client
  	bool "Include Shadowsocks Rust Client"
  	depends on !i386
@@ -76,7 +59,7 @@
  	default y if aarch64||x86_64
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Server
-@@ -113,8 +131,6 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Server
+@@ -98,8 +114,6 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Server
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Client
  	bool "Include ShadowsocksR Libev Client"
@@ -85,7 +68,7 @@
  	default y
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Server
-@@ -130,22 +146,20 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadow_TLS
+@@ -115,13 +129,12 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadow_TLS
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_Simple_Obfs
  	bool "Include Simple-Obfs (Shadowsocks Plugin)"
@@ -98,20 +81,9 @@
 -	default y if aarch64||arm||i386||x86_64
 +	default y if aarch64||i386||x86_64
  
- config PACKAGE_$(PKG_NAME)_INCLUDE_Trojan_Plus
- 	bool "Include Trojan-Plus"
--	select PACKAGE_trojan-plus
--	default y
-+	default y if aarch64||i386||x86_64
- 
- config PACKAGE_$(PKG_NAME)_INCLUDE_tuic_client
- 	bool "Include tuic-client"
--	depends on aarch64||arm||i386||x86_64
-+	depends on aarch64||i386||x86_64
- 	select PACKAGE_tuic-client
- 	default n
- 
-@@ -157,14 +171,11 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata
+ config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata
+ 	bool "Include V2ray_Geodata"
+@@ -131,14 +144,11 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata
  
  config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Plugin
  	bool "Include V2ray-Plugin (Shadowsocks Plugin)"
@@ -131,18 +103,39 @@
 
 --- a/luci-app-passwall/luasrc/controller/passwall.lua
 +++ b/luci-app-passwall/luasrc/controller/passwall.lua
-@@ -21,6 +21,7 @@ function index()
+@@ -21,6 +21,8 @@ function index()
  	entry({"admin", "services", appname, "reset_config"}, call("reset_config")).leaf = true
  	entry({"admin", "services", appname, "show"}, call("show_menu")).leaf = true
  	entry({"admin", "services", appname, "hide"}, call("hide_menu")).leaf = true
 +	entry({"admin", "services", appname, "ip"}, call('check_ip')).leaf = true
++	entry({"admin", "services", appname, "adblock_refresh"}, call('adblock_refresh')).leaf = true
  	local e
  	if uci:get(appname, "@global[0]", "hide_from_luci") ~= "1" then
  		e = entry({"admin", "services", appname}, alias("admin", "services", appname, "settings"), _("Pass Wall"), -1)
-@@ -211,6 +212,61 @@ function clear_log()
+@@ -211,6 +213,81 @@ function clear_log()
  	luci.sys.call("echo '' > /tmp/log/passwall.log")
  end
  
++function adblock_refresh()
++	local icount = 0
++
++	local status = luci.sys.call("/usr/share/passwall/adblock.sh >/dev/null 2>&1")
++	if status == 0 then
++		icount = tonumber(luci.sys.exec("wc -l < /usr/share/passwall/rules/block_host"))
++		if icount>0 then
++			retstring = tostring(math.ceil(icount))
++		else
++			retstring = "-1"
++		end
++	elseif status == 2 then
++		retstring = "0"
++	else
++		retstring = "-1"
++	end
++	luci.http.prepare_content("application/json")
++	luci.http.write_json({ret=retstring})
++end
++
 +function check_site(host, port)
 +    local nixio = require "nixio"
 +    local socket = nixio.socket("inet", "stream")
@@ -201,18 +194,63 @@
  function index_status()
  	local e = {}
  	e.dns_mode_status = luci.sys.call("netstat -apn | grep ':15353 ' >/dev/null") == 0
-diff --git a/luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua b/luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua
-index 0c33ccd90f..258da6a551 100644
+
 --- a/luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua
 +++ b/luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua
-@@ -953,5 +953,6 @@ footer.api = api
+@@ -547,6 +547,45 @@ function o.cfgvalue(self, section)
+ 		api.url("flush_set") .. "?redirect=1&reload=1", set_title)
+ end
+ 
++o = s:taboption("DNS", Flag, "adblock", translate("Enable adblock"))
++o.rmempty = false
++
++local UD="" rule_count="0"
++if nixio.fs.access("/usr/share/passwall/rules/block_host") then
++UD = os.date("%Y-%m-%d %H:%M", nixio.fs.stat("/usr/share/passwall/rules/block_host").ctime)
++rule_count = tonumber(luci.sys.exec("wc -l < /usr/share/passwall/rules/block_host"))
++end
++o = s:taboption("DNS", DummyValue, "refresh_data", translate("Subscribe Rules Data"))
++o.rawhtml = true
++o.template = appname .. "/global/adblock_refresh"
++o.value = rule_count.." "..translate("Records")
++o.description = string.format("<strong>"..translate("Last Update Checked")..":</strong> %s<br/>",UD)
++o:depends("adblock",1)
++
++o = s:taboption("DNS", DynamicList, "ad_url", translate("Adblock Rules Subscribe"))
++o:value("https://cdn.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockdomainlite.txt", translate("AdBlock DNS Filters"))
++o:value("https://cdn.jsdelivr.net/gh/privacy-protection-tools/anti-AD@master/anti-ad-domains.txt", translate("anti-AD"))
++o.default = "https://cdn.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockdomainlite.txt"
++o.description = translate("Support Domain / Dnsmasq / AdGuardHome / Hosts format list")
++o:depends("adblock",1)
++
++o = s:taboption("DNS", DynamicList, "white_list", translate("Adblock white list"))
++o.rmempty = true
++o:depends("adblock",1)
++function o.validate(self, value)
++    local vlist = (type(value) == "table") and value or { value }
++    
++    for _, v in ipairs(vlist) do
++        if v and v ~= "" and not (
++            #v < 254 and v:match("^[a-zA-Z0-9][a-zA-Z0-9%-%.]*[a-zA-Z0-9]$") and v:match("%.")
++        ) then
++            return nil, translate("Invalid domain name") .. ": " .. v
++        end
++    end
++    
++    return value
++end
++
+ s:tab("Proxy", translate("Mode"))
+ 
+ o = s:taboption("Proxy", Flag, "use_direct_list", translatef("Use %s", translate("Direct List")))
+@@ -834,5 +855,6 @@ footer.api = api
  footer.global_cfgid = global_cfgid
  footer.shunt_list = api.jsonc.stringify(shunt_list)
  m:append(footer)
 +m:append(Template(appname .. "/global/status_bottom"))
  
  return m
-diff --git a/luci-app-passwall/luasrc/view/passwall/global/status_bottom.htm b/luci-app-passwall/luasrc/view/passwall/global/status_bottom.htm
+
 new file mode 100644
 index 000000000000..a00fff9c79b3
 --- /dev/null
@@ -349,6 +387,15 @@ index 000000000000..a00fff9c79b3
 
 --- a/luci-app-passwall/root/usr/share/passwall/0_default_config
 +++ b/luci-app-passwall/root/usr/share/passwall/0_default_config
+@@ -32,7 +32,7 @@ config global_haproxy
+ 
+ config global_delay
+ 	option start_daemon '1'
+-	option start_delay '60'
++	option start_delay '30'
+ 
+ config global_forwarding
+ 	option tcp_no_redir_ports 'disable'
 @@ -57,13 +57,17 @@ config global_other
  	option show_node_info '0'
  
@@ -381,3 +428,105 @@ index 000000000000..a00fff9c79b3
  
  config global_app
  	option sing_box_file '/usr/bin/sing-box'
+
+--- a/luci-app-passwall/root/usr/share/passwall/app.sh
++++ b/luci-app-passwall/root/usr/share/passwall/app.sh
+@@ -1539,6 +1539,14 @@ start_dns() {
+ 	fi
+ }
+ 
++start_adblock() {
++	[ "$(config_t_get global adblock 0)" != "1" ] && {
++	[ -s $RULES_PATH/my_block_host ] && ln -sf $RULES_PATH/my_block_host $RULES_PATH/block_host || > $RULES_PATH/block_host
++	return
++	}
++	"$APP_PATH/adblock.sh" > /dev/null 2>&1 &
++}
++
+ start_haproxy() {
+ 	[ "$(config_t_get global_haproxy balancing_enable 0)" != "1" ] && return
+ 	haproxy_path=$TMP_PATH/haproxy
+@@ -1853,6 +1861,7 @@ start() {
+ 	export ENABLE_DEPRECATED_GEOIP=true
+ 	export SS_SYSTEM_DNS_RESOLVER_FORCE_BUILTIN=1
+ 	ulimit -n 65535
++	start_adblock
+ 	start_haproxy
+ 	start_socks
+ 	nftflag=0
+
+--- a/luci-app-passwall/luasrc/model/cbi/passwall/client/rule_list.lua
++++ b/luci-app-passwall/luasrc/model/cbi/passwall/client/rule_list.lua
+@@ -152,7 +152,7 @@ o.validate = function(self, value)
+ end
+ 
+ ---- Block Hosts
+-local block_host = path .. "block_host"
++local block_host = path .. "my_block_host"
+ o = s:taboption("block_list", TextValue, "block_host", "", "<font color='red'>" .. translate("These had been joined websites will be block. Please input the domain names of websites, every line can input only one website domain. For example: twitter.com.") .. "</font>")
+ o.rows = 15
+ o.wrap = "off"
+
+--- a/luci-app-passwall/po/zh-cn/passwall.po
++++ b/luci-app-passwall/po/zh-cn/passwall.po
+@@ -1,6 +1,48 @@
+ msgid "Pass Wall"
+ msgstr "PassWall"
+ 
++msgid "Enable adblock"
++msgstr "启用广告屏蔽"
++
++msgid "Records"
++msgstr "条记录"
++
++msgid "Refresh..."
++msgstr "正在更新,请稍候.."
++
++msgid "No new data!"
++msgstr "已经是最新数据,无需更新"
++
++msgid "Refresh Error!"
++msgstr "更新失败!"
++
++msgid "Refresh OK!"
++msgstr "更新成功~"
++
++msgid "Total Records:"
++msgstr "新的总规则数："
++
++msgid "Refresh Data"
++msgstr "更新订阅规则"
++
++msgid "Last Update Checked"
++msgstr "上一次规则更新时间"
++
++msgid "Subscribe Rules Data"
++msgstr "去广告规则"
++
++msgid "Support Domain / Dnsmasq / AdGuardHome / Hosts format list"
++msgstr "支持 域名/Dnsmasq/AdGuardHome/Hosts 格式的过滤列表"
++
++msgid "Adblock Rules Subscribe"
++msgstr "广告过滤列表URL"
++
++msgid "Adblock white list"
++msgstr "广告过滤白名单"
++
++msgid "Invalid domain name"
++msgstr "无效域名"
++
+ msgid "Auto"
+ msgstr "自动"
+ 
+
+--- a/luci-app-passwall/luasrc/passwall/util_xray.lua
++++ b/luci-app-passwall/luasrc/passwall/util_xray.lua
+@@ -152,7 +152,7 @@ function gen_outbound(flag, node, tag, proxy_table)
+ 					serverName = node.tls_serverName,
+ 					allowInsecure = (function()
+ 								if node.tls_pinSHA256 and node.tls_pinSHA256 ~= "" then return nil end
+-								if api.compare_versions(os.date("%Y.%m.%d"), "<", "2026.6.1") and node.tls_allowInsecure == "1" then return true end
++								if node.tls_allowInsecure == "1" then return true end
+ 							end)(),
+ 					fingerprint = (node.type == "Xray" and node.utls == "1" and node.fingerprint and node.fingerprint ~= "") and node.fingerprint or nil,
+ 					pinnedPeerCertSha256 = (function()

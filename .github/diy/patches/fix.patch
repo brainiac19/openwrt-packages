@@ -10,15 +10,13 @@
 
 --- a/totd/root/etc/init.d/totd
 +++ b/totd/root/etc/init.d/totd
-@@ -55,7 +55,7 @@ start_service(){
+@@ -55,5 +55,5 @@ start_service(){
  }
  
  stop_service(){
 -	killall $PROG > /dev/null 2>&1
 +	kill `pgrep -f $PROG` > /dev/null 2>&1
  }
- 
- reload_service() {
 
 --- a/gowebdav/files/webdav.init
 +++ b/gowebdav/files/webdav.init
@@ -58,16 +56,6 @@
  	ps | grep "pppd plugin rp-pppoe.so" | grep -v "grep" | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1 &
 -	killall -q -9 pppoe-server
 +	kill -q -9 `pidof pppoe-server | sed "s/$$//g"`
- }
-
---- a/luci-app-pppoe-user/root/etc/init.d/pppoe-user
-+++ b/luci-app-pppoe-user/root/etc/init.d/pppoe-user
-@@ -70,5 +70,5 @@ start() {
- }
- 
- stop() {
--    killall -q pppoe-user
-+    kill -q `pidof pppoe-user | sed "s/$$//g"`
  }
 
 --- a/luci-app-speedtest-web/root/etc/init.d/speedtest-web

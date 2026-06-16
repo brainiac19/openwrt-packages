@@ -24,7 +24,6 @@ config global
 	option log_tcp '0'
 	option log_udp '0'
 	option loglevel 'error'
-	option trojan_loglevel '4'
 	option log_chinadns_ng '0'
 
 config global_haproxy
@@ -32,7 +31,7 @@ config global_haproxy
 
 config global_delay
 	option start_daemon '1'
-	option start_delay '60'
+	option start_delay '30'
 
 config global_forwarding
 	option tcp_no_redir_ports 'disable'
@@ -50,7 +49,6 @@ config global_xray
 	option sniffing_override_dest '0'
 
 config global_singbox
-	option sniff_override_destination '0'
 
 config global_other
 	option auto_detection_time 'tcping'

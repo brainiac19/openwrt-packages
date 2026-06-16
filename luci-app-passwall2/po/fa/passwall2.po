@@ -46,8 +46,8 @@ msgstr "لیست قوانین"
 msgid "Access control"
 msgstr "کنترل دسترسی"
 
-msgid "Watch Logs"
-msgstr "مشاهده گزارش‌ها"
+msgid "Runtime Logs"
+msgstr "گزارش‌های زمان اجرا"
 
 msgid "Node Config"
 msgstr "پیکربندی گره"
@@ -120,6 +120,12 @@ msgstr "0 به معنای عدم استفاده است"
 
 msgid "Current node: %s"
 msgstr "گره فعلی: %s"
+
+msgid "Direct domain DNS routing"
+msgstr "مسیریابی مستقیم DNS دامنه"
+
+msgid "Please note that the program will not start if the format is incorrect!"
+msgstr "لطفا توجه داشته باشید که اگر قالب نادرست باشد، برنامه شروع نخواهد شد!"
 
 msgid "IP:Port mode acceptable, multi value split with english comma."
 msgstr "حالت IP:Port قابل قبول است، مقادیر متعدد را با کاما انگلیسی جدا کنید."
@@ -431,6 +437,12 @@ msgstr "تعداد گره‌های ترجیحی"
 msgid "The load balancer selects the optimal number of nodes, and traffic is randomly distributed among them."
 msgstr "توزیع‌کننده بار تعداد بهینه‌ای از گره‌ها را انتخاب می‌کند و ترافیک به طور تصادفی بین آن‌ها توزیع می‌شود."
 
+msgid "Failure Tolerance (%)"
+msgstr "تحمل شکست (%)"
+
+msgid "The maximum acceptable speed test failure rate. For example, 1 means allowing a 1% failure rate."
+msgstr "حداکثر نرخ شکست قابل قبول در تست سرعت. برای مثال، عدد ۱ به معنای مجاز بودن نرخ شکست ۱٪ است.
+
 msgid "Shunt"
 msgstr "شنت (Shunt)"
 
@@ -552,9 +564,6 @@ msgstr "اصلی"
 msgid "Transport Plugin"
 msgstr "افزونه انتقال"
 
-msgid "Shadowsocks secondary encryption"
-msgstr "رمزنگاری ثانویه Shadowsocks"
-
 msgid "Obfs Type"
 msgstr "نوع مبهم‌سازی (Obfs)"
 
@@ -566,6 +575,9 @@ msgstr "نوع احراز هویت"
 
 msgid "Auth Password"
 msgstr "رمز عبور احراز هویت"
+
+msgid "Client BBR Flow Control"
+msgstr "کنترل BBR مشتری"
 
 msgid "Commands the client to use the BBR flow control algorithm"
 msgstr "به کلاینت دستور می‌دهد تا از الگوریتم کنترل جریان BBR استفاده کند"
@@ -590,6 +602,9 @@ msgstr "پنجره دریافت اتصال QUIC"
 
 msgid "QUIC concurrent bidirectional streams"
 msgstr "جریان‌های دوطرفه همزمان QUIC"
+
+msgid "QUIC KeepAlive interval"
+msgstr "فاصله QUIC KeepAlive"
 
 msgid "Disable MTU detection"
 msgstr "غیرفعال کردن تشخیص MTU"
@@ -740,6 +755,12 @@ msgstr "ربودن ICMP (PING)"
 
 msgid "Hijacking ICMPv6 (IPv6 PING)"
 msgstr "ربودن ICMPv6 (IPv6 PING)"
+
+msgid "Force Proxy LAN IP"
+msgstr "IP پروکسی LAN را مجبور کنید"
+
+msgid "By default, commonly used internal network IP ranges will be connect directly (not entering the core). If you want a certain network range to go through a proxy, please add it here."
+msgstr "به طور پیش‌فرض، محدوده‌های IP شبکه داخلی که معمولاً استفاده می‌شوند، مستقیماً متصل می‌شوند (و وارد هسته نمی‌شوند). اگر می‌خواهید محدوده شبکه خاصی از طریق پروکسی عبور کند، لطفاً آن را اینجا اضافه کنید."
 
 msgid "Sniffing"
 msgstr "شنود (Sniffing)"
@@ -1029,6 +1050,12 @@ msgstr "URL اشتراک نمی‌تواند خالی باشد."
 msgid "Subscribe via proxy"
 msgstr "اشتراک از طریق پروکسی"
 
+msgid "Update Once on Boot"
+msgstr "یک بار در بوت به‌روزرسانی کنید"
+
+msgid "Updates the subscription the first time runs automatically after each system boot."
+msgstr "اشتراک را برای اولین بار به طور خودکار پس از هر بار بوت سیستم به‌روزرسانی می‌کند."
+
 msgid "Enable auto update subscribe"
 msgstr "فعال‌سازی به‌روزرسانی خودکار اشتراک"
 
@@ -1094,6 +1121,21 @@ msgstr "محدوده IP"
 
 msgid "Source Interface"
 msgstr "رابط منبع"
+
+msgid "Bridge"
+msgstr "پل شبکه"
+
+msgid "Wireless Adapter"
+msgstr "آداپتور بی‌سیم"
+
+msgid "Ethernet Adapter"
+msgstr "آداپتور اترنت"
+
+msgid "Tunnel Interface"
+msgstr "رابط تونل"
+
+msgid "Invalid interface name"
+msgstr "نام رابط نامعتبر"
 
 msgid "Use Interface With ACLs"
 msgstr "استفاده از رابط با ACLها"
@@ -1209,9 +1251,6 @@ msgstr "پاک کردن گزارش‌ها"
 msgid "Password"
 msgstr "رمز عبور"
 
-msgid "IV Check"
-msgstr "بررسی IV"
-
 msgid "UDP over TCP"
 msgstr "UDP بر روی TCP"
 
@@ -1223,12 +1262,6 @@ msgstr "پورت محلی"
 
 msgid "Fast Open"
 msgstr "بازگشایی سریع (Fast Open)"
-
-msgid "Pre-connections"
-msgstr "پیش‌اتصالات"
-
-msgid "Number of early established connections to reduce latency."
-msgstr "تعداد اتصالات از پیش برقرار شده برای کاهش تاخیر."
 
 msgid "plugin"
 msgstr "افزونه"
@@ -1314,23 +1347,17 @@ msgstr "اجازه ناامن (allowInsecure)"
 msgid "Whether unsafe connections are allowed. When checked, Certificate validation will be skipped."
 msgstr "آیا اتصالات ناامن مجاز هستند. در صورت تیک خوردن، اعتبارسنجی گواهی نادیده گرفته می‌شود."
 
+msgid "Used when the node link does not include this parameter."
+msgstr "زمانی استفاده می‌شود که لینک گره شامل این پارامتر نباشد."
+
 msgid "%s Node Use Type"
 msgstr "نوع استفاده گره %s"
 
-msgid "Set the TUIC proxy server ip address"
-msgstr "تنظیم آدرس IP سرور پروکسی TUIC"
-
-msgid "TUIC User Password For Connect Remote Server"
-msgstr "رمز عبور کاربر TUIC برای اتصال به سرور راه دور"
-
-msgid "TUIC UserName For Local Socks"
-msgstr "نام کاربری TUIC برای Socks محلی"
-
-msgid "TUIC Password For Local Socks"
-msgstr "رمز عبور TUIC برای Socks محلی"
-
 msgid "UDP relay mode"
 msgstr "حالت بازپخش UDP"
+
+msgid "Concurrent Tunnels"
+msgstr "تونل‌های همزمان"
 
 msgid "Congestion control algorithm"
 msgstr "الگوریتم کنترل ازدحام"
@@ -1338,32 +1365,11 @@ msgstr "الگوریتم کنترل ازدحام"
 msgid "Heartbeat interval(second)"
 msgstr "بازه ضربان قلب (ثانیه)"
 
-msgid "Timeout for establishing a connection to server(second)"
-msgstr "مهلت زمانی برای برقراری اتصال به سرور (ثانیه)"
-
-msgid "Garbage collection interval(second)"
-msgstr "بازه جمع‌آوری زباله (ثانیه)"
-
-msgid "Garbage collection lifetime(second)"
-msgstr "طول عمر جمع‌آوری زباله (ثانیه)"
-
 msgid "Disable SNI"
 msgstr "غیرفعال کردن SNI"
 
 msgid "Enable 0-RTT QUIC handshake"
 msgstr "فعال‌سازی دست تکان دادن 0-RTT QUIC"
-
-msgid "TUIC send window"
-msgstr "پنجره ارسال TUIC"
-
-msgid "TUIC receive window"
-msgstr "پنجره دریافت TUIC"
-
-msgid "TUIC Maximum packet size the socks5 server can receive from external, in bytes"
-msgstr "حداکثر اندازه بسته TUIC که سرور socks5 می‌تواند از خارج دریافت کند، به بایت"
-
-msgid "Set if the listening socket should be dual-stack"
-msgstr "تنظیم کنید که سوکت شنونده دو پشته‌ای (dual-stack) باشد یا خیر"
 
 msgid "<br />none: default, no masquerade, data sent is packets with no characteristics.<br />srtp: disguised as an SRTP packet, it will be recognized as video call data (such as FaceTime).<br />utp: packets disguised as uTP will be recognized as bittorrent downloaded data.<br />wechat-video: packets disguised as WeChat video calls.<br />dtls: disguised as DTLS 1.2 packet.<br />wireguard: disguised as a WireGuard packet. (not really WireGuard protocol)<br />dns: Disguising traffic as DNS requests."
 msgstr "<br />none: پیش‌فرض، بدون استتار، داده‌های ارسالی بسته‌های بدون مشخصه هستند.<br />srtp: مبدل شده به بسته SRTP، به عنوان داده تماس تصویری (مانند FaceTime) شناخته می‌شود.<br />utp: بسته‌های مبدل شده به uTP به عنوان داده دانلود شده bittorrent شناخته می‌شوند.<br />wechat-video: بسته‌های مبدل شده به تماس‌های تصویری WeChat.<br />dtls: مبدل شده به بسته DTLS 1.2.<br />wireguard: مبدل شده به بسته WireGuard. (نه واقعاً پروتکل WireGuard)<br />dns: پنهان کردن ترافیک به عنوان درخواست‌های DNS."
@@ -1599,14 +1605,14 @@ msgstr "اندازه بافر"
 msgid "Buffer size for every connection (kB)"
 msgstr "اندازه بافر برای هر اتصال (کیلوبایت)"
 
-msgid "Handshake Timeout"
-msgstr "مهلت زمانی دست تکان دادن"
-
 msgid "Idle Timeout"
 msgstr "مهلت زمانی بیکاری"
 
-msgid "Hop Interval"
-msgstr "بازه پرش (Hop)"
+msgid "Hop Interval(second)"
+msgstr "فاصله پرش (ثانیه)"
+
+msgid "Supports a fixed value or a random range (e.g., 30, 5-30), minimum 5."
+msgstr "از یک مقدار ثابت یا یک محدوده تصادفی (مثلاً 30، 5-30)، حداقل 5، پشتیبانی می‌کند."
 
 msgid "HeartbeatPeriod(second)"
 msgstr "دوره ضربان قلب (ثانیه)"
@@ -1616,9 +1622,6 @@ msgstr "بازنویسی آدرس مقصد اتصال"
 
 msgid "Override the connection destination address with the sniffed domain.<br />Otherwise use sniffed domain for routing only.<br />If using shunt nodes, configure the domain shunt rules correctly."
 msgstr "بازنویسی آدرس مقصد اتصال با دامنه شنود شده (Sniffed Domain).<br />در غیر این صورت، از دامنه شنود شده فقط برای مسیریابی استفاده می‌شود.<br />اگر از گره‌های شنت (Shunt) استفاده می‌کنید، قوانین مربوطه را به درستی پیکربندی کنید."
-
-msgid "Override the connection destination address with the sniffed domain.<br />When enabled, traffic will match only by domain, ignoring IP rules.<br />If using shunt nodes, configure the domain shunt rules correctly."
-msgstr "بازنویسی آدرس مقصد اتصال با دامنه شنود شده.<br />زمانی که فعال باشد، ترافیک فقط با دامنه مطابقت داده می‌شود و قوانین IP نادیده گرفته می‌شوند.<br />اگر از گره‌های شنت استفاده می‌کنید، قوانین شنت دامنه را به درستی پیکربندی کنید."
 
 msgid "Handshake Server"
 msgstr "سرور دست تکان دادن"
@@ -1644,17 +1647,17 @@ msgstr "نام گواهی TLS (CertName)"
 msgid "TLS is used to verify the leaf certificate name."
 msgstr "TLS برای تأیید نام گواهی برگ (Leaf Certificate) استفاده می‌شود."
 
+msgid "TLS Certificate (PEM)"
+msgstr "گواهی TLS (PEM)"
+
+msgid "Full certificate (chain), PEM format."
+msgstr "گواهی کامل (زنجیره‌ای)، فرمت PEM."
+
 msgid "ECH Config"
 msgstr "پیکربندی ECH"
 
 msgid "ECH Key"
 msgstr "کلید ECH"
-
-msgid "PQ signature schemes"
-msgstr "طرح‌های امضای PQ"
-
-msgid "Disable adaptive sizing of TLS records"
-msgstr "غیرفعال‌سازی اندازه‌دهی تطبیقی رکوردهای TLS"
 
 msgid "ECH Query Policy"
 msgstr "سیاست پرس‌وجوی ECH"
@@ -1662,11 +1665,20 @@ msgstr "سیاست پرس‌وجوی ECH"
 msgid "Controls the policy used when performing DNS queries for ECH configuration."
 msgstr "سیاستی که هنگام انجام پرس‌وجوهای DNS برای پیکربندی ECH استفاده می‌شود را کنترل می‌کند."
 
+msgid "ECH Query Domain"
+msgstr "دامنه پرس و جو ECH"
+
+msgid "Overrides the domain name used for ECH HTTPS record queries."
+msgstr "نام دامنه مورد استفاده برای پرس‌وجوهای رکورد ECH HTTPS را لغو می‌کند."
+
 msgid "Enable Multipath TCP, need to be enabled in both server and client configuration."
 msgstr "فعال‌سازی Multipath TCP، باید در تنظیمات سرور و کلاینت فعال باشد."
 
 msgid "An FinalMaskObject in JSON format, used for sharing."
 msgstr "یک شیء FinalMaskObject با فرمت JSON که برای اشتراک‌گذاری استفاده می‌شود."
+
+msgid "Custom finalmask overrides mkcp, hysteria2, fragment, noise, and related settings."
+msgstr "ماسک نهایی سفارشی، تنظیمات mkcp، hysteria2، fragment، noise و تنظیمات مرتبط را نادیده می‌گیرد."
 
 msgid "Fragment"
 msgstr "قطعه‌بندی (Fragment)"
@@ -1686,8 +1698,8 @@ msgstr "طول قطعه"
 msgid "Fragmented packet length (byte)"
 msgstr "طول بسته قطعه‌بندی شده (بایت)"
 
-msgid "Fragment Interval"
-msgstr "بازه قطعه‌بندی"
+msgid "Fragment Delay"
+msgstr "تأخیر قطعه"
 
 msgid "Fragmentation interval (ms)"
 msgstr "بازه قطعه‌بندی (میلی‌ثانیه)"
@@ -1696,7 +1708,7 @@ msgid "Max Split"
 msgstr "حداکثر تقسیم"
 
 msgid "Limit the maximum number of splits."
-msgstr "محدود کردن حداکثر تعداد تقسیم‌ها."
+msgstr "حداکثر تعداد تقسیم‌بندی‌ها را محدود کنید."
 
 msgid "Split handshake data into multiple TLS records for better censorship evasion. Low overhead. Recommended to enable first."
 msgstr "تقسیم داده‌های دست تکان دادن به چندین رکورد TLS برای فرار بهتر از سانسور. سربار کم. توصیه می‌شود ابتدا فعال شود."
@@ -1716,20 +1728,29 @@ msgstr "برای ارسال بسته‌های نویز، \"Noise\" را در ت�
 msgid "Xray Noise Packets"
 msgstr "بسته‌های نویز Xray"
 
-msgid "Packet"
-msgstr "بسته"
+msgid "Packet | Rand Length"
+msgstr "طول بسته | رند"
 
 msgid "Delay (ms)"
 msgstr "تاخیر (میلی‌ثانیه)"
 
-msgid "IP Type"
-msgstr "نوع IP"
-
 msgid "If is domain name, The requested domain name will be resolved to IP before connect."
 msgstr "اگر نام دامنه است، نام دامنه درخواست شده قبل از اتصال به IP حل می‌شود."
 
+msgid "Domain DNS Resolve"
+msgstr "حل مشکل DNS دامنه"
+
+msgid "If the node address is a domain name, this DNS will be used for resolution."
+msgstr "اگر آدرس گره یک نام دامنه باشد، از این DNS برای حل مسئله استفاده خواهد شد."
+
+msgid "Supports only Xray or Sing-box node types."
+msgstr "فقط گره‌های نوع Xray یا Sing-box پشتیبانی می‌شوند."
+
 msgid "Chain Proxy"
 msgstr "پروکسی زنجیره‌ای"
+
+msgid "Outbound Interface"
+msgstr "رابط خروجی"
 
 msgid "Landing Node"
 msgstr "گره فرود (Landing Node)"
@@ -1743,9 +1764,6 @@ msgid ""
 msgstr ""
 "پروکسی زنجیره‌ای فقط با گره‌های Xray یا Sing-box کار می‌کند.<br>"
 "شما فقط می‌توانید از گره‌های دستی یا وارد شده به عنوان گره‌های زنجیره‌ای استفاده کنید."
-
-msgid "Set the default domain resolution strategy for the sing-box node."
-msgstr "تنظیم استراتژی پیش‌فرض حل دامنه برای گره sing-box."
 
 msgid "Prefer IPv4"
 msgstr "ترجیح IPv4"
@@ -2182,6 +2200,12 @@ msgstr "ورودی %s:%s"
 msgid "Node: %s:%s, Weight: %s"
 msgstr "گره: %s:%s، وزن: %s"
 
+msgid "[Rule update] instance is running; please try again later."
+msgstr "نمونه [به‌روزرسانی قانون] در حال اجرا است؛ لطفاً بعداً دوباره امتحان کنید."
+
+msgid "[Subscription] instance is running; [Rule Update] queue and wait."
+msgstr "نمونه [اشتراک] در حال اجرا است؛ [به‌روزرسانی قانون] در صف انتظار قرار می‌گیرد."
+
 msgid "Start updating the rules..."
 msgstr "شروع به‌روزرسانی قوانین..."
 
@@ -2254,14 +2278,14 @@ msgstr "نادیده گرفتن گره %s به دلیل ناسازگاری با 
 msgid "Skip node: %s. Because Sing-Box does not support the %s protocol's %s transmission method, Xray needs to be used instead."
 msgstr "صرف‌نظر از گره: %s. زیرا Sing-Box از روش انتقال %s پروتکل %s پشتیبانی نمی‌کند، باید به جای آن از Xray استفاده شود."
 
-msgid "Xray unsupport %s plugin."
-msgstr "Xray از افزونه %s پشتیبانی نمی‌کند."
+msgid "%s unsupport SS %s plugin."
+msgstr "%s از افزونه %s پشتیبانی نمی‌کند."
 
 msgid "Plugin options Incomplete."
 msgstr "گزینه‌های افزونه ناقص است."
 
-msgid "shadowsocks-libev unsupport 2022 encryption."
-msgstr "shadowsocks-libev از رمزنگاری 2022 پشتیبانی نمی‌کند."
+msgid "Please replace %s to support %s transmission method."
+msgstr "لطفا برای پشتیبانی از روش انتقال %s، %s را جایگزین کنید."
 
 msgid "Please replace Xray or Sing-Box to support more transmission methods in Shadowsocks."
 msgstr "لطفاً برای پشتیبانی از روش‌های انتقال بیشتر در Shadowsocks، از Xray یا Sing-Box استفاده کنید."
@@ -2332,6 +2356,12 @@ msgstr "دریافت محتوای اشتراک برای [%s] خالی است. ا
 msgid "Proxy"
 msgstr "پروکسی"
 
+msgid "[Subscription] instance is running; please try again later."
+msgstr "نمونه [اشتراک] در حال اجرا است؛ لطفاً بعداً دوباره امتحان کنید."
+
+msgid "[Rule Update] instance is running; [Subscription] queue and wait."
+msgstr "نمونه [به‌روزرسانی قانون] در حال اجرا است؛ [اشتراک] در صف انتظار قرار دارد."
+
 msgid "Start subscribing..."
 msgstr "شروع اشتراک‌گیری..."
 
@@ -2349,3 +2379,6 @@ msgstr "خطا، بازیابی سرویس."
 
 msgid "Subscription complete..."
 msgstr "اشتراک کامل شد..."
+
+msgid "Processing, please wait…"
+msgstr "در حال پردازش، لطفا صبر کنید…"

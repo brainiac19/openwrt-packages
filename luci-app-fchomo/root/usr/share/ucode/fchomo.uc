@@ -12,6 +12,7 @@ export const PRESET_OUTBOUND = [
 	'REJECT',
 	'REJECT-DROP',
 	'PASS',
+	'PASS-RULE',
 	'COMPATIBLE',
 	'GLOBAL'
 ];
@@ -84,7 +85,7 @@ export function yqRead(flags, command, content) {
 };
 
 export function yqReadFile(flags, command, filepath) {
-	const out = executeCommand(null, 'yq', flags, shellQuote(command), filepath);
+	const out = executeCommand(null, 'yq', flags, shellQuote(command), shellQuote(filepath));
 
 	return out.stdout;
 };
@@ -191,3 +192,211 @@ export function removeBlankAttrs(res) {
 	return content;
 };
 /* String helper end */
+
+/* String universal start */
+export function parseVlessEncryption(payload, side) {
+	if (isEmpty(payload))
+		return null;
+
+	let content = json(trim(payload));
+
+	let required = join('.', [
+		content.method,
+		content.xormode,
+		side === 'server' ? content.ticket : side === 'client' ? content.rtt : null
+	]);
+
+	return required +
+		(isEmpty(content.paddings) ? '' : '.' + join('.', content.paddings)) + // Optional
+		(isEmpty(content.keypairs) ? '' : '.' + join('.', map(content.keypairs, e => e[side]))); // Required
+};
+
+export function parseListener(cfg, isClient, label) {
+	return {
+		name: cfg['.name'],
+		type: cfg.type,
+
+		listen: cfg.listen || '::',
+		port: cfg.port,
+		...(isClient ? {
+			rule: cfg.rule,
+			proxy: label,
+		} : {}),
+
+		/* HTTP / SOCKS / VMess / VLESS / Trojan / AnyTLS / Tuic / Hysteria2 */
+		users: (cfg.type in ['http', 'socks', 'mixed', 'vmess', 'vless', 'trojan', 'trusttunnel']) ? [
+			(cfg.username || cfg.vmess_uuid) ? {
+				/* HTTP / SOCKS */
+				username: cfg.username,
+				password: cfg.password,
+
+				/* VMess / VLESS */
+				uuid: cfg.vmess_uuid,
+				flow: cfg.vless_flow,
+				alterId: strToInt(cfg.vmess_alterid)
+			} : null
+			/*{
+			}*/
+		] : ((cfg.type in ['mieru', 'anytls', 'tuic', 'hysteria2']) ? {
+			/* Mieru / AnyTLS / Hysteria2 */
+			...arrToObj([[cfg.username, cfg.password]]),
+
+			/* Tuic */
+			...arrToObj([[cfg.uuid, cfg.password]])
+		} : null),
+
+		/* Hysteria2 */
+		up: strToInt(cfg.hysteria_up_mbps),
+		down: strToInt(cfg.hysteria_down_mbps),
+		"ignore-client-bandwidth": strToBool(cfg.hysteria_ignore_client_bandwidth),
+		obfs: cfg.hysteria_obfs_type,
+		"obfs-password": cfg.hysteria_obfs_password,
+		"obfs-min-packet-size": strToInt(cfg.hysteria_obfs_min_packet_size),
+		"obfs-max-packet-size": strToInt(cfg.hysteria_obfs_max_packet_size),
+		masquerade: cfg.hysteria_masquerade,
+		"realm-opts": cfg.hysteria2_realm === '1' ? {
+			enable: true,
+			"server-url": cfg.hysteria2_realm_server_url,
+			token: cfg.hysteria2_realm_token,
+			"realm-id": cfg.hysteria2_realm_id,
+			"stun-servers": cfg.hysteria2_realm_stun_servers,
+			// @TLS of server-url
+			//sni,
+			//alpn,
+			//"skip-cert-verify",
+			//fingerprint,
+			//certificate,
+			//"private-key"
+		} : null,
+
+		/* Hysteria2 Realmserver */
+		token: cfg.hysteria2_realmserver_token,
+		"max-realms": strToInt(cfg.hysteria2_realmserver_max_realms),
+		"max-realms-per-ip": strToInt(cfg.hysteria2_realmserver_max_realms_per_ip),
+		"trusted-proxy-header": cfg.hysteria2_realmserver_trusted_proxy_header,
+		"realm-name-pattern": cfg.hysteria2_realmserver_realm_name_pattern,
+
+		/* Shadowsocks */
+		cipher: cfg.shadowsocks_chipher,
+		password: cfg.shadowsocks_password,
+
+		/* Mieru */
+		transport: cfg.mieru_transport,
+		"traffic-pattern": cfg.mieru_traffic_pattern,
+		"user-hint-is-mandatory": strToBool(cfg.mieru_user_hint_is_mandatory),
+
+		/* Sudoku */
+		key: cfg.sudoku_key,
+		"aead-method": replace(cfg.sudoku_aead_method || '', 'chacha20-ietf-poly1305', 'chacha20-poly1305') || null,
+		"padding-min": strToInt(cfg.sudoku_padding_min),
+		"padding-max": strToInt(cfg.sudoku_padding_max),
+		"table-type": cfg.sudoku_table_type,
+		"custom-tables": cfg.sudoku_custom_tables,
+		"handshake-timeout": strToInt(cfg.sudoku_handshake_timeout) ?? null,
+		"enable-pure-downlink": (cfg.sudoku_enable_pure_downlink === '0') ? false : null,
+		...(cfg.type === 'sudoku' ? {
+			httpmask: (cfg.sudoku_http_mask === '0') ? { disable: true } : {
+				disable: false,
+				mode: cfg.sudoku_http_mask_mode,
+				"path-root": cfg.sudoku_path_root,
+			}
+		} : {}),
+		fallback: (cfg.sudoku_http_mask === '0') ? null : cfg.sudoku_fallback,
+
+		/* Snell */
+		psk: cfg.snell_psk,
+		version: cfg.snell_version,
+		"obfs-opts": cfg.type === 'snell' ? {
+			mode: cfg.plugin_opts_obfsmode,
+			host: cfg.plugin_opts_host,
+		} : null,
+
+		/* Tuic */
+		"max-idle-time": durationToSecond(cfg.tuic_max_idle_time),
+		"authentication-timeout": durationToSecond(cfg.tuic_authentication_timeout),
+		"max-udp-relay-packet-size": strToInt(cfg.tuic_max_udp_relay_packet_size),
+
+		/* Trojan */
+		"ss-option": cfg.trojan_ss_enabled === '1' ? {
+			enabled: true,
+			method: cfg.trojan_ss_chipher,
+			password: cfg.trojan_ss_password
+		} : null,
+
+		/* AnyTLS */
+		"padding-scheme": cfg.anytls_padding_scheme,
+
+		/* VMess / VLESS */
+		decryption: cfg.vless_decryption === '1' ? parseVlessEncryption(cfg.vless_encryption_hmpayload, 'server') : null,
+
+		/* Tunnel */
+		target: cfg.tunnel_target,
+
+		/* Plugin fields */
+		...(cfg.plugin ? {
+			// obfs-simple
+			"simple-obfs": cfg.plugin === 'obfs' ? {
+				enable: true,
+				mode: cfg.plugin_opts_obfsmode
+			} : null,
+			// shadow-tls
+			"shadow-tls": cfg.plugin === 'shadow-tls' ? {
+				enable: true,
+				version: strToInt(cfg.plugin_opts_shadowtls_version),
+				...(strToInt(cfg.plugin_opts_shadowtls_version) >= 3 ? {
+					users: [
+						{
+							name: 1,
+							password: cfg.plugin_opts_thetlspassword
+						}
+					],
+				} : { password: cfg.plugin_opts_thetlspassword }),
+				handshake: {
+					dest: cfg.plugin_opts_handshake_dest
+				},
+			} : null
+		} : {}),
+
+		/* Extra fields */
+		"congestion-controller": cfg.congestion_controller,
+		"bbr-profile": cfg.bbr_profile,
+		network: cfg.network,
+		udp: cfg.udp === '0' ? false : true,
+
+		/* TLS fields */
+		...(cfg.allow_insecure === '1' ? { "allow-insecure": true } : cfg.tls === '1' ? {
+			alpn: cfg.tls_alpn,
+			...(cfg.tls_reality === '1' ? {
+				"reality-config": {
+					dest: cfg.tls_reality_dest,
+					"private-key": cfg.tls_reality_private_key,
+					"short-id": cfg.tls_reality_short_id,
+					"server-names": cfg.tls_reality_server_names
+				}
+			} : {
+				certificate: cfg.tls_cert_path,
+				"private-key": cfg.tls_key_path
+			}),
+			"client-auth-type": cfg.tls_client_auth_type,
+			"client-auth-cert": cfg.tls_client_auth_cert_path,
+			"ech-key": cfg.tls_ech_key,
+		} : {}),
+
+		/* Transport fields */
+		...(cfg.transport_enabled === '1' ? {
+			"grpc-service-name": cfg.transport_type === 'grpc' ? cfg.transport_grpc_servicename : null,
+			"ws-path": cfg.transport_type === 'ws' ? cfg.transport_path : null,
+			"xhttp-config": cfg.transport_type === 'xhttp' ? {
+				path: cfg.transport_path,
+				host: cfg.transport_host,
+				mode: cfg.transport_xhttp_mode,
+				"no-sse-header": strToBool(cfg.transport_xhttp_no_sse_header),
+				"sc-max-buffered-posts": strToInt(cfg.transport_xhttp_sc_max_buffered_posts) || null,
+				"sc-stream-up-server-secs": cfg.transport_xhttp_sc_stream_up_server_secs,
+				"sc-max-each-post-bytes": strToInt(cfg.transport_xhttp_sc_max_each_post_bytes) || null,
+				// @其他的配置
+			} : null
+		} : {})
+	}
+};
+/* String universal end */

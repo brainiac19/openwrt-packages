@@ -266,13 +266,45 @@ return view.extend({
 		o.placeholder = '/usr/share/bandix';
 		o.rmempty = false;
 
-		// 添加 tc_priority 设置
-		o = s.option(form.Value, 'tc_priority', _('TC Priority'),
-			_('Set TC filter priority to better coexist with other eBPF TC programs. Lower numbers indicate higher priority. 0 means system-assigned.'));
+		o = s.option(form.ListValue, 'tc_backend', _('TC backend'),
+			_('Select TC attach backend. Recommendation: use auto by default; tcx is preferred on kernel >= 6.6; netlink is safer on older kernels.'));
+		o.value('auto', 'auto');
+		o.value('tcx', 'tcx');
+		o.value('netlink', 'netlink');
+		o.default = 'auto';
+		o.rmempty = false;
+
+		o = s.option(form.ListValue, 'tc_order', _('TC order'));
+		o.value('first', 'first');
+		o.value('default', 'default');
+		o.value('last', 'last');
+		o.value('before', 'before');
+		o.value('after', 'after');
+		o.default = 'default';
+		o.rmempty = false;
+		o.depends('tc_backend', 'tcx');
+
+		o = s.option(form.Value, 'netlink_priority', _('Netlink priority'),
+			_('Only used when backend is netlink. Range: 0..65535 (0 means default).'));
+		o.datatype = 'range(0,65535)';
 		o.default = '0';
-		o.datatype = 'integer';
 		o.placeholder = '0';
 		o.rmempty = false;
+		o.depends('tc_backend', 'netlink');
+
+		o = s.option(form.Value, 'tcx_anchor_ingress_id', _('TCX ingress anchor program id'),
+			_('Used when tc_order is before/after. Must be a valid ingress program id on the same interface.'));
+		o.datatype = 'uinteger';
+		o.rmempty = true;
+		o.depends({ tc_backend: 'tcx', tc_order: 'before' });
+		o.depends({ tc_backend: 'tcx', tc_order: 'after' });
+
+		o = s.option(form.Value, 'tcx_anchor_egress_id', _('TCX egress anchor program id'),
+			_('Used when tc_order is before/after. Must be a valid egress program id on the same interface.'));
+		o.datatype = 'uinteger';
+		o.rmempty = true;
+		o.depends({ tc_backend: 'tcx', tc_order: 'before' });
+		o.depends({ tc_backend: 'tcx', tc_order: 'after' });
 
 		// 添加版本信息显示（合并显示）
 		o = s.option(form.DummyValue, 'version', _('Version'));
@@ -688,6 +720,24 @@ return view.extend({
 		o.default = '600';
 		o.rmempty = false;
 		o.depends('traffic_enable_storage', '1');
+
+		o = s.option(form.Flag, 'traffic_neighbor_flush_enable', _('Enable Neighbor Flush'),
+			_('Enable periodic flush of neighbor table data. Generally not recommended if the device list works normally.'));
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.option(form.ListValue, 'traffic_neighbor_flush_interval', _('Neighbor Flush Interval'),
+			_('Set the interval for flushing neighbor table data'));
+		o.value('600', _('10 minutes'));
+		o.value('900', _('15 minutes'));
+		o.value('1800', _('30 minutes'));
+		o.value('3600', _('1 hour'));
+		o.value('7200', _('2 hours'));
+		o.value('43200', _('12 hours'));
+		o.value('86400', _('24 hours'));
+		o.default = '600';
+		o.rmempty = false;
+		o.depends('traffic_neighbor_flush_enable', '1');
 
 		// 添加历史流量周期（秒）
 		o = s.option(form.ListValue, 'traffic_realtime_window', _('Realtime Traffic Period'),

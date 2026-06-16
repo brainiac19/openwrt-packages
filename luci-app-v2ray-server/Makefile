@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI support for V2ray Server
-LUCI_DEPENDS:=+luci-compat +unzip
+LUCI_DEPENDS:=+unzip
 LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-v2ray-server
 PKG_VERSION:=13
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

@@ -1,8 +1,7 @@
 <h4 align="right"><a href="README.md">English</a> | <strong>简体中文</strong></h4>
 <p align="center">
-    <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/logo/logo-circular.png" width="152"/>
+    <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/logo/logo-lockup.png" width="360" alt="Aurora Theme"/>
 </p>
-<h1 align="center">Aurora Theme</h1>
 <p align="center"><strong>一款基于 Vite 和 Tailwind CSS 构建的现代 OpenWrt LuCI 主题。</strong></p>
 <h4 align="center">🏔️ 纯净 | 🦢 优雅 | 📱 响应式 | 🌗 深色/浅色模式 | ⚙️ 可配置 </h4>
 <div align="center">
@@ -18,6 +17,7 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/preview/theme/multi-device-showcase.png" alt="Multi-Device Showcase" width="100%">
 </div>
+
 
 ## 特性
 
@@ -59,44 +59,27 @@ OpenWrt 25.12+ 和 Snapshot 版本使用 `apk`；其他版本使用 `opkg`：
 - **opkg** (OpenWrt < 25.12):
 
   ```sh
-  cd /tmp && uclient-fetch -O luci-theme-aurora.ipk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.11.0-r20260208_all.ipk && opkg install luci-theme-aurora.ipk
+  cd /tmp && uclient-fetch -O luci-theme-aurora.ipk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.12.0-r20260531_all.ipk && opkg install luci-theme-aurora.ipk
   ```
 
 - **apk** (OpenWrt 25.12+ 及 snapshots):
 
   ```sh
-  cd /tmp && uclient-fetch -O luci-theme-aurora.apk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.11.0-r20260208.apk && apk add --allow-untrusted luci-theme-aurora.apk
+  cd /tmp && uclient-fetch -O luci-theme-aurora.apk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk && apk add --allow-untrusted luci-theme-aurora.apk
   ```
 
 ## 加入贡献
 
-<details>
-<summary><b>关于开发</b></summary>
+Aurora 使用 **Vite** 与现代前端工具链构建，并尝试将 AI 融入开发全链路。详见[开发文档](.dev/docs/DEVELOPMENT.md)。欢迎提交建议或 PR。
 
-<p>步入 2026 年，前端工具链已相当成熟先进，并且现代浏览器也支持了很多有趣的新特性。所以全面拥抱现代前端生态是 Aurora 主题的核心理念。</p>
-
-<p>Aurora 使用 <strong>Vite</strong> 作为构建工具。</p>
-
-<ul>
-<li>在开发过程中，您可以自由选择并集成任何 CSS 工具链。</li>
-<li>在生产环境中，提供多种策略来优化打包资源。</li>
-<li>最重要的是，借助于本地代理服务器，样式的修改可以实时预览！</li>
-</ul>
-
-<p>更多开发信息，请参阅 <a href=".dev/docs/DEVELOPMENT.md">开发文档</a>。</p>
-
-</details>
-
-<h4>社区</h4>
-
-<p>我建立了一个 Discord 服务器 —— 欢迎来聊天！👋 <a href="https://discord.gg/EBncRrzfTw">加入 Discord</a></p>
+[discord.gg/EBncRrzfTw](https://discord.gg/EBncRrzfTw)
 
 ## 许可与致谢
 
-本项目基于 Apache License 2.0 许可开源。
+[Apache 2.0](LICENSE)。致谢：
 
-生产构建结构基于官方 OpenWrt 主题 [luci-theme-bootstrap](https://github.com/openwrt/luci/tree/master/themes/luci-theme-bootstrap)。
-
-视觉风格和部分实现受到 [Apple](https://www.apple.com/) 和 [Vercel](https://vercel.com/) 的影响。
-
-本项目使用现代前端技术栈开发，包括 [Vite](https://vitejs.dev/) 和 [Tailwind CSS](https://tailwindcss.com/)。
+- [luci-theme-bootstrap](https://github.com/openwrt/luci/tree/master/themes/luci-theme-bootstrap)
+- [Vite](https://vitejs.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Claude Code](https://claude.ai/code)
+- [Apple](https://www.apple.com/) 和 [Vercel](https://vercel.com/) — 设计灵感

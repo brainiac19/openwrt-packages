@@ -8,7 +8,10 @@
 'require validation';
 
 /* Member */
-const rulesetdoc = 'data:text/html;base64,' + 'cmxzdHBsYWNlaG9sZGVy';
+const rulesetdoc = [
+	'data:text/html;base64,',
+'H4sIAAAAAAAAAyvKKS4pyElMTs3Iz0lJLQIA8fIyYQ8AAAA='
+];
 
 const sharkaudio = function() {
 	return 'data:audio/x-wav;base64,' +
@@ -50,6 +53,13 @@ const congestion_controller = [
 	['cubic', _('cubic')],
 	['new_reno', _('new_reno')],
 	['bbr', _('bbr')],
+];
+
+const bbr_profiles = [
+	['', _('Keep default')],
+	['standard', _('Standard')],
+	['conservative', _('Conservative')],
+	['aggressive', _('Aggressive')],
 ];
 
 const stunserver = [
@@ -108,7 +118,7 @@ const glossary = {
 		prefmt: '%s_nodedomain',
 		field: 'proxy-server-nameserver-policy',
 	},
-	node: {
+	node: { // outbound
 		prefmt: 'node_%s',
 		field: 'proxies',
 	},
@@ -123,6 +133,10 @@ const glossary = {
 	ruleset: {
 		prefmt: 'rule_%s',
 		field: 'rule-providers',
+	},
+	inbound: {
+		prefmt: 'inbound_%s',
+		field: 'listeners',
 	},
 	server: {
 		prefmt: 'server_%s',
@@ -142,13 +156,16 @@ const inbound_type = [
 	['shadowsocks', _('Shadowsocks') + ' - ' + _('TCP/UDP')],
 	['mieru', _('Mieru') + ' - ' + _('TCP/UDP')],
 	['sudoku', _('Sudoku') + ' - ' + _('TCP')],
+	['snell', _('Snell') + ' - ' + _('TCP')],
 	['vmess', _('VMess') + ' - ' + _('TCP')],
 	['vless', _('VLESS') + ' - ' + _('TCP')],
 	['trojan', _('Trojan') + ' - ' + _('TCP')],
 	['anytls', _('AnyTLS') + ' - ' + _('TCP')],
 	['tuic', _('TUIC') + ' - ' + _('UDP')],
 	['hysteria2', _('Hysteria2') + ' - ' + _('UDP')],
-	//['tunnel', _('Tunnel') + ' - ' + _('TCP/UDP')]
+	['hysteria2-realm', _('Hysteria2 Realm') + ' - ' + _('TCP/UDP')],
+	['trusttunnel', _('TrustTunnel') + ' - ' + _('TCP/UDP')],
+	['tunnel', _('Tunnel') + ' - ' + _('TCP/UDP')]
 ];
 
 const ip_version = [
@@ -183,18 +200,28 @@ const outbound_type = [
 	['hysteria2', _('Hysteria2') + ' - ' + _('UDP')],
 	['tuic', _('TUIC') + ' - ' + _('UDP')],
 	['masque', _('Masque') + ' - ' + _('UDP')], // https://blog.cloudflare.com/post-quantum-warp/
+	['trusttunnel', _('TrustTunnel') + ' - ' + _('TCP/UDP')],
 	['wireguard', _('WireGuard') + ' - ' + _('UDP')],
 	['ssh', _('SSH') + ' - ' + _('TCP')]
 ];
 
 const preset_outbound = {
 	full: [
+		['DIRECT'],      // built-in Outbound
+		['REJECT'],      // built-in Outbound
+		['REJECT-DROP'], // built-in Outbound
+		['PASS'],        // built-in Outbound
+		['PASS-RULE'],   // built-in Outbound
+		['COMPATIBLE'],  // built-in Outbound
+		['GLOBAL']       // built-in Proxy Group
+	],
+	proxy: [ // built-in Outbound
 		['DIRECT'],
 		['REJECT'],
 		['REJECT-DROP'],
 		['PASS'],
-		['COMPATIBLE'],
-		['GLOBAL']
+		['PASS-RULE'],
+		['COMPATIBLE']
 	],
 	direct: [
 		['', _('null')],
@@ -833,48 +860,95 @@ function calcStringMD5(e) {
 	return (p(a) + p(b) + p(c) + p(d)).toLowerCase();
 }
 
+/* Thanks to luci-app-ssr-plus */
+function base64Prefmt(str) {
+	str = str.replace(/-/g, '+').replace(/_/g, '/');
+	const padding = (4 - (str.length % 4)) % 4;
+	if (padding)
+		str += '='.repeat(padding);
+
+	return str;
+}
+
 /* thanks to homeproxy */
-function decodeBase64Str(str) {
+/**
+ * General Base64 Decoding
+ * @param {string} str - Base64 string
+ * @param {boolean} asText - true: decoded string (UTF-8), false: Uint8Array
+ * @returns {string|Uint8Array}
+ */
+function decodeBase64(str, asText = false) {
 	if (!str)
 		return null;
 
-	/* Thanks to luci-app-ssr-plus */
-	str = str.replace(/-/g, '+').replace(/_/g, '/');
-	let padding = (4 - (str.length % 4)) % 4;
-	if (padding)
-		str = str + Array(padding + 1).join('=');
+	str = base64Prefmt(str);
 
-	return decodeURIComponent(Array.prototype.map.call(atob(str), (c) =>
-		'%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-	).join(''));
+	if (asText)
+		return decodeURIComponent(Array.prototype.map.call(atob(str), c =>
+			'%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+		).join(''));
+
+	return Uint8Array.fromBase64(str); // OR Uint8Array.from(atob(str), c => c.charCodeAt(0));
 }
 
-function encodeBase64Str(str) {
-	if (!str)
+/**
+ * General Base64 Encoding
+ * @param {string|Array|ArrayBuffer|Uint8Array} input - String or binary data to be encoded
+ * @returns {string}
+ */
+function encodeBase64(input) {
+	if (isEmpty(input))
 		return null;
 
-	let buf = encodeURIComponent(str).split('%').slice(1).map(h => parseInt(h, 16));
-	return btoa(String.fromCharCode(...buf));
+	if (typeof input === 'string') {
+		const rawStr = encodeURIComponent(input).replace(/%([0-9A-F]{2})/g, (match, p1) =>
+			String.fromCharCode(parseInt(p1, 16))
+		);
+		return btoa(rawStr);
+	}
+
+	const buf = (input instanceof ArrayBuffer) ? new Uint8Array(input) : input;
+	return new Uint8Array(buf).toBase64(); // OR btoa(String.fromCharCode.apply(null, buf));
 }
 
-function decodeBase64Bin(str) {
-	if (!str)
+// thanks to https://github.com/scottschiller/ArmorAlley/blob/master/src/floppy/index-floppy.html
+/**
+ * Unzip Gzip data
+ * @param {string|Array|ArrayBuffer|Uint8Array} input - Input data (Base64 string or binary object)
+ * @param {boolean} asText - Return a string? (true: text, false: arrayBuffer)
+ * @returns {Promise<string|Uint8Array>}
+ */
+async function decompressGzip(input, asText = false) {
+	if (isEmpty(input))
 		return null;
 
-	/* Thanks to luci-app-ssr-plus */
-	str = str.replace(/-/g, '+').replace(/_/g, '/');
-	let padding = (4 - (str.length % 4)) % 4;
-	if (padding)
-		str = str + Array(padding + 1).join('=');
+	const ds = new DecompressionStream('gzip');
 
-	return Array.prototype.map.call(atob(str), c => c.charCodeAt(0)); // OR Uint8Array.fromBase64(str);
-}
+	let blob_in;
+	if (typeof input === 'string') {
+		if (input.match(/^H4sI/)) { // Gzip magic + Deflate
+			const response = await window.fetch('data:application/octet-stream;base64,' + base64Prefmt(input));
+			blob_in = await response.blob();
+		} else
+			throw new Error('Not a valid base64 encoded gzip');
+	} else {
+		// The `input` should be `Array` or `ArrayBuffer` or `Uint8Array`.
+		input = new Uint8Array(input);
+		if (input.subarray(0, 3).join(',') === [0x1f, 0x8b, 0x08].join(',')) // Gzip magic + Deflate
+			blob_in = new Blob([input]);
+		else
+			throw new Error('Not a valid gzip');
+	}
 
-function encodeBase64Bin(buf) {
-	if (isEmpty(buf))
-		return null;
+	const decodedStream = blob_in.stream().pipeThrough(ds);
+	const blob_out = await new window.Response(decodedStream).blob();
 
-	return btoa(String.fromCharCode(...buf)); // OR new Uint8Array(buf).toBase64();
+	if (asText)
+		return await blob_out.text();
+	else {
+		const buf = await blob_out.arrayBuffer();
+		return new Uint8Array(buf);
+	}
 }
 
 function generateRand(type, length) {
@@ -910,11 +984,11 @@ function shuffle(StrORArr) {
 	else
 		throw new Error(`String or Array only`);
 
-    for (let i = arr.length - 1; i > 0; i--) {         // Traverse the array from back to front
-        const j = Math.floor(Math.random() * (i + 1)); // Generate a random index between 0 and i
+	for (let i = arr.length - 1; i > 0; i--) {         // Traverse the array from back to front
+		const j = Math.floor(Math.random() * (i + 1)); // Generate a random index between 0 and i
 
-        [arr[i], arr[j]] = [arr[j], arr[i]];           // Swap positions
-    }
+		[arr[i], arr[j]] = [arr[j], arr[i]];           // Swap positions
+	}
 
 	if (typeof StrORArr === 'string')
 		return arr.join('');
@@ -945,7 +1019,8 @@ function yaml2json(content, command) {
 
 function isEmpty(res) {
 	if (res == null) return true;                                                // null, undefined
-	if (typeof res === 'string' || Array.isArray(res)) return res.length === 0;  // empty String/Array
+	if (typeof res.length === 'number') return res.length === 0;                 // empty String/Array/TypedArray
+	if (res instanceof ArrayBuffer) return res.byteLength === 0;                 // empty ArrayBuffer
 	if (typeof res === 'object') {
 		if (res instanceof Map || res instanceof Set) return res.size === 0;     // empty Map/Set
 		return Object.keys(res).length === 0;                                    // empty Object
@@ -1504,9 +1579,9 @@ function validateSudokuCustomTable(section_id, value) {
 		return _('Expecting: %s').format(_('valid format: 2x, 2p, 4v'));
 
 	const counts = {};
-    for (const c of value)
-        counts[c] = (counts[c] || 0) + 1;
-    if (!(counts.x === 2 && counts.p === 2 && counts.v === 4))
+	for (const c of value)
+		counts[c] = (counts[c] || 0) + 1;
+	if (!(counts.x === 2 && counts.p === 2 && counts.v === 4))
 		return _('Expecting: %s').format(_('valid format: 2x, 2p, 4v'));
 
 	return true;
@@ -1658,6 +1733,7 @@ return baseclass.extend({
 	monospacefonts,
 	checkurls,
 	congestion_controller,
+	bbr_profiles,
 	stunserver,
 	dashrepos,
 	dashrepos_urlparams,
@@ -1700,10 +1776,9 @@ return baseclass.extend({
 
 	/* Method */
 	calcStringMD5,
-	decodeBase64Str,
-	encodeBase64Str,
-	decodeBase64Bin,
-	encodeBase64Bin,
+	decodeBase64,
+	encodeBase64,
+	decompressGzip,
 	generateRand,
 	shuffle,
 	json2yaml,

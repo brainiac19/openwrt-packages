@@ -24,10 +24,10 @@ function index()
 	local uci = api.uci			-- in function index()
 	local fs = api.fs
 	entry({"admin", "services", appname}).dependent = true
-	entry({"admin", "services", appname, "reset_config"}, call("reset_config")).leaf = true
 	entry({"admin", "services", appname, "show"}, call("show_menu")).leaf = true
 	entry({"admin", "services", appname, "hide"}, call("hide_menu")).leaf = true
 	entry({"admin", "services", appname, "ip"}, call('check_ip')).leaf = true
+	entry({"admin", "services", appname, "adblock_refresh"}, call('adblock_refresh')).leaf = true
 	local e
 	if uci:get(appname, "@global[0]", "hide_from_luci") ~= "1" then
 		e = entry({"admin", "services", appname}, alias("admin", "services", appname, "settings"), _("Pass Wall"), -1)
@@ -53,13 +53,14 @@ function index()
 	entry({"admin", "services", appname, "socks_config"}, cbi(appname .. "/client/socks_config")).leaf = true
 	entry({"admin", "services", appname, "acl"}, cbi(appname .. "/client/acl"), _("Access control"), 98).leaf = true
 	entry({"admin", "services", appname, "acl_config"}, cbi(appname .. "/client/acl_config")).leaf = true
-	entry({"admin", "services", appname, "log"}, form(appname .. "/client/log"), _("Watch Logs"), 999).leaf = true
+	entry({"admin", "services", appname, "log"}, form(appname .. "/client/log"), _("Runtime Logs"), 999).leaf = true
 
 	--[[ Server ]]
 	entry({"admin", "services", appname, "server"}, cbi(appname .. "/server/index"), _("Server-Side"), 99).leaf = true
 	entry({"admin", "services", appname, "server_user"}, cbi(appname .. "/server/user")).leaf = true
 
 	--[[ API ]]
+	entry({"admin", "services", appname, "server_user_update"}, call("server_user_update")).leaf = true
 	entry({"admin", "services", appname, "server_user_status"}, call("server_user_status")).leaf = true
 	entry({"admin", "services", appname, "server_user_log"}, call("server_user_log")).leaf = true
 	entry({"admin", "services", appname, "server_get_log"}, call("server_get_log")).leaf = true
@@ -113,9 +114,12 @@ function index()
 	--[[Backup]]
 	entry({"admin", "services", appname, "create_backup"}, call("create_backup")).leaf = true
 	entry({"admin", "services", appname, "restore_backup"}, call("restore_backup")).leaf = true
+	entry({"admin", "services", appname, "reset_config"}, call("reset_config")).leaf = true
 
 	--[[geoview]]
 	entry({"admin", "services", appname, "geo_view"}, call("geo_view")).leaf = true
+
+	entry({"admin", "services", appname, "fetch_certsha256"}, call("fetch_certsha256")).leaf = true
 end
 
 local function http_write_json(content)
@@ -134,9 +138,15 @@ local function http_write_json_error(data)
 end
 
 function reset_config()
+	uci:revert(appname)
+	luci.sys.call("echo '' > /tmp/log/passwall.log")
 	luci.sys.call('/etc/init.d/passwall stop')
-	luci.sys.call('[ -f "/usr/share/passwall/0_default_config" ] && cp -f /usr/share/passwall/0_default_config /etc/config/passwall')
-	http.redirect(api.url())
+	if luci.sys.call('[ -s "/usr/share/passwall/0_default_config" ]') == 0 then
+		luci.sys.call('cp -f /usr/share/passwall/0_default_config /etc/config/passwall')
+		api.log(" * 恢复默认配置成功。")
+	else
+		api.log(" * 找不到默认配置文件，重置失败！")
+	end
 end
 
 function show_menu()
@@ -296,6 +306,26 @@ function clear_log()
 	luci.sys.call("echo '' > /tmp/log/passwall.log")
 end
 
+function adblock_refresh()
+	local icount = 0
+
+	local status = luci.sys.call("/usr/share/passwall/adblock.sh >/dev/null 2>&1")
+	if status == 0 then
+		icount = tonumber(luci.sys.exec("wc -l < /usr/share/passwall/rules/block_host"))
+		if icount>0 then
+			retstring = tostring(math.ceil(icount))
+		else
+			retstring = "-1"
+		end
+	elseif status == 2 then
+		retstring = "0"
+	else
+		retstring = "-1"
+	end
+	luci.http.prepare_content("application/json")
+	luci.http.write_json({ret=retstring})
+end
+
 function check_site(host, port)
     local nixio = require "nixio"
     local socket = nixio.socket("inet", "stream")
@@ -355,7 +385,8 @@ function index_status()
 	local e = {}
 	local dns_shunt = uci:get(appname, "@global[0]", "dns_shunt") or "dnsmasq"
 	if dns_shunt == "smartdns" then
-		e.dns_mode_status = luci.sys.call("pidof smartdns >/dev/null") == 0
+		local port = api.get_cache_var("SMARTDNS_LOCAL_PORT") or 0
+		e.dns_mode_status = (port ~= 0) and luci.sys.call(string.format("netstat -apn | grep ':%s ' >/dev/null", port)) == 0 or false
 	elseif dns_shunt == "chinadns-ng" then
 		e.dns_mode_status = luci.sys.call("/bin/busybox top -bn1 | grep -v 'grep' | grep '/tmp/etc/passwall/bin/' | grep 'default' | grep 'chinadns_ng' >/dev/null") == 0
 	else
@@ -540,17 +571,11 @@ function copy_node()
 	local uuid = api.gen_short_uuid()
 	uci:section(appname, "nodes", uuid)
 	for k, v in pairs(uci:get_all(appname, section)) do
-		local filter = k:find("%.")
-		if filter and filter == 1 then
-		else
-			xpcall(function()
-				uci:set(appname, uuid, k, v)
-			end,
-			function(e)
-			end)
+		if not k:match("^%.") and k ~= "group" then
+			if k == "remarks" then v = (v or "") .. "(1)" end
+			uci:set(appname, uuid, k, v)
 		end
 	end
-	uci:delete(appname, uuid, "group")
 	uci:set(appname, uuid, "add_mode", 1)
 	api.uci_save(uci, appname)
 	http.redirect(api.url("node_config", uuid))
@@ -596,13 +621,17 @@ function delete_select_nodes()
 				uci:delete(appname, t[".name"])
 				socks = "Socks_" .. t[".name"]
 			end
+			local changed = false
 			local auto_switch_node_list = uci:get(appname, t[".name"], "autoswitch_backup_node") or {}
 			for i = #auto_switch_node_list, 1, -1 do
 				if w == auto_switch_node_list[i] then
 					table.remove(auto_switch_node_list, i)
+					changed = true
 				end
 			end
-			uci:set_list(appname, t[".name"], "autoswitch_backup_node", auto_switch_node_list)
+			if changed then
+				uci:set_list(appname, t[".name"], "autoswitch_backup_node", auto_switch_node_list)
+			end
 		end)
 		local tcp_node = uci:get(appname, "@global[0]", "tcp_node") or ""
 		if tcp_node == w or tcp_node == socks then
@@ -758,7 +787,11 @@ function save_node_list_opt()
 end
 
 function update_rules()
-	local update = http.formvalue("update")
+	local update = http.formvalue("update") or ""
+	if update == "" then
+		http_write_json_error({ message = "missing update target" })
+		return
+	end
 	luci.sys.call("lua /usr/share/passwall/rule_update.lua log '" .. update .. "' > /dev/null 2>&1 &")
 	http_write_json()
 end
@@ -779,6 +812,23 @@ function rollback_rules()
 		luci.sys.call("lua /usr/share/passwall/rule_update.lua log '" .. rules .. "' rollback > /dev/null")
 	end
 	http_write_json_ok()
+end
+
+function server_user_update()
+	local id = http.formvalue("id") -- Node id
+	local data = http.formvalue("data") -- json new Data
+	if id and data then
+		local data_t = jsonParse(data) or {}
+		if next(data_t) then
+			for k, v in pairs(data_t) do
+				uci:set(appname .. "_server", id, k, v)
+			end
+			api.uci_save(uci, appname .. "_server")
+			http_write_json_ok()
+			return
+		end
+	end
+	http_write_json_error()
 end
 
 function server_user_status()
@@ -903,6 +953,7 @@ function restore_backup()
 		fp:write(decoded)
 		fp:close()
 		if chunk_index + 1 == total_chunks then
+			uci:revert(appname)
 			luci.sys.call("echo '' > /tmp/log/passwall.log")
 			api.log(" * PassWall 配置文件上传成功…")
 			local temp_dir = '/tmp/passwall_bak'
@@ -967,14 +1018,14 @@ function geo_view()
 	local geoip_path = geo_dir .. "/geoip.dat"
 	local geo_type, file_path, cmd
 	local geo_string = ""
-	local bin = api.get_app_path("geoview")
+	local bin = api.finded_com("geoview")
 	if action == "lookup" then
 		if api.datatypes.ipaddr(value) or api.datatypes.ip6addr(value) then
 			geo_type, file_path = "geoip", geoip_path
 		else
 			geo_type, file_path = "geosite", geosite_path
 		end
-		cmd = string.format(bin .. " -type %s -action lookup -input '%s' -value '%s' -lowmem=true", geo_type, file_path, value)
+		cmd = string.format("%q -type %q -action lookup -input %q -value %q -lowmem=true", bin, geo_type, file_path, value)
 		geo_string = luci.sys.exec(cmd):lower()
 		if geo_string ~= "" then
 			local lines, rules, seen = {}, {}, {}
@@ -1002,7 +1053,7 @@ function geo_view()
 		if prefix and list and list ~= "" then
 			geo_type = prefix:sub(1, -2)
 			file_path = (geo_type == "geoip") and geoip_path or geosite_path
-			cmd = string.format("geoview -type %s -action extract -input '%s' -list '%s' -lowmem=true", geo_type, file_path, list)
+			cmd = string.format("%q -type %q -action extract -input %q -list %q -lowmem=true", bin, geo_type, file_path, list)
 			geo_string = luci.sys.exec(cmd)
 		end
 	end
@@ -1087,4 +1138,18 @@ function flush_set()
 	if redirect == "1" then
 		http.redirect(api.url("log"))
 	end
+end
+
+function fetch_certsha256()
+	local id = http.formvalue("id") or ""
+	local address = (id ~= "") and uci:get(appname, id, "address") or ""
+	local port = (id ~= "") and uci:get(appname, id, "port") or 0
+	local sni = (id ~= "") and uci:get(appname, id, "tls_serverName") or ""
+	sni = (sni ~= "") and sni or address
+	if address == "" or port == 0 then
+		http_write_json_error()
+		return
+	end
+	local data = api.fetch_cert_sha256(address, port, sni, 5)
+	http_write_json(data ~= "" and { code = 1, data = data } or { code = 0 })
 end

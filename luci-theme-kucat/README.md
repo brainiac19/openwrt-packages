@@ -15,7 +15,7 @@
 ![hello](https://views.whatilearened.today/views/github/sirpdboy/deplives.svg) [![](https://img.shields.io/badge/TG群-点击加入-FFFFFF.svg)](https://t.me/joinchat/AAAAAEpRF88NfOK5vBXGBQ)
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/sirpdboy/sirpdboy/master/kucat.png">
+<img src="https://raw.githubusercontent.com/sirpdboy/sirpdboy/master/kucat.png"  width="400"/>
 
 # KuCat Theme Config Plugin
 
@@ -23,15 +23,14 @@
    
    and manage login and desktop background images here.
    
-  <p align="center">
-  <a target="_blank" href="https://github.com/sirpdboy/luci-theme-kucat/releases">
-    <img src="https://img.shields.io/github/release/sirpdboy/luci-theme-kucat.svg?style=flat-square&label=luci-theme-kucat&colorB=green">
-  </a>
-</p>
+  <a href="https://openwrt.org"><img alt="OpenWrt" src="https://img.shields.io/badge/OpenWrt-%E2%89%A523.05-00B5E2?logo=openwrt&logoColor=white"></a>
+  <a href="https://www.google.com/chrome/"><img alt="Chrome" src="https://img.shields.io/badge/Chrome-%E2%89%A5111-4285F4?logo=googlechrome&logoColor=white"></a>
+  <a href="https://www.apple.com/safari/"><img alt="Safari" src="https://img.shields.io/badge/Safari-%E2%89%A516.4-000000?logo=safari&logoColor=white"></a>
+  <a href="https://www.mozilla.org/firefox/"><img alt="Firefox" src="https://img.shields.io/badge/Firefox-%E2%89%A5128-FF7139?logo=firefoxbrowser&logoColor=white"></a>
+  <a target="_blank" href="https://github.com/sirpdboy/luci-theme-kucat/releases"> <img alt="GitHub release" src="https://img.shields.io/github/v/release/sirpdboy/luci-theme-kucat"></a>
+  <a href="https://github.com/sirpdboy/luci-theme-kucat/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/sirpdboy/luci-theme-kucat/total?cacheSeconds=1"></a>
 
 [中文](README_CN.md) | [English]
-
-![screenshots](https://raw.githubusercontent.com/sirpdboy/openwrt/master/doc/说明1.jpg)
 
 </div>
 
@@ -120,6 +119,13 @@ wget --no-check-certificate -O luci-app-kucat-config_2.2.0-r20260227_all.ipk  ht
 wget --no-check-certificate -O luci-i18n-kucat-config-zh-cn_0_all.ipk  https://github.com/sirpdboy/luci-app-kucat-config/releases/download/v2.2.0/luci-i18n-kucat-config-zh-cn_0_all.ipk
 opkg install luci-app-kucat-config_2.2.0-r20260227_all.ipk  luci-i18n-kucat-config-zh-cn_0_all.ipk
 ```
+
+### 1、 Switch to display all menus
+<img width="1050" height="902" alt="image" src="https://github.com/user-attachments/assets/f4e20444-3466-4b9e-9215-9da469fbb00e" />
+
+### 2、 Manually customize menu items
+ Location: [System] ->[KUCAT Settings] ->[Menu Configuration]
+<img width="1050" height="902" alt="image" src="https://github.com/user-attachments/assets/f2531551-1da4-44ae-b768-207e7666d341" />
 
 
 ## interface

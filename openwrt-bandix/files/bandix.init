@@ -17,7 +17,12 @@ start_service() {
 	local port
 	local data_dir
 	local log_level
+	local tc_order
+	local tc_backend
 	local tc_priority
+	local netlink_priority
+	local tcx_anchor_ingress_id
+	local tcx_anchor_egress_id
 	local traffic_enabled
 	local traffic_realtime_window
 	local traffic_flush_interval
@@ -26,6 +31,8 @@ start_service() {
 	local traffic_event_url
 	local traffic_additional_subnets
 	local traffic_exclude_iface_device
+	local traffic_neighbor_flush_enable
+	local traffic_neighbor_flush_interval
 	local connections_enabled
 	local dns_enabled
 	local dns_max_records
@@ -37,7 +44,12 @@ start_service() {
 	config_get port 'general' 'port'
 	config_get data_dir 'general' 'data_dir'
 	config_get log_level 'general' 'log_level'
+	config_get tc_order 'general' 'tc_order'
+	config_get tc_backend 'general' 'tc_backend'
 	config_get tc_priority 'general' 'tc_priority'
+	config_get netlink_priority 'general' 'netlink_priority'
+	config_get tcx_anchor_ingress_id 'general' 'tcx_anchor_ingress_id'
+	config_get tcx_anchor_egress_id 'general' 'tcx_anchor_egress_id'
 	config_get_bool traffic_enabled 'traffic' 'enabled'
 	config_get traffic_realtime_window 'traffic' 'traffic_realtime_window'
 	config_get traffic_flush_interval 'traffic' 'traffic_flush_interval'
@@ -46,6 +58,8 @@ start_service() {
 	config_get traffic_event_url 'traffic' 'traffic_event_url'
 	config_get traffic_additional_subnets 'traffic' 'traffic_additional_subnets'
 	config_get_bool traffic_exclude_iface_device 'traffic' 'traffic_exclude_iface_device' '0'
+	config_get_bool traffic_neighbor_flush_enable 'traffic' 'traffic_neighbor_flush_enable' '0'
+	config_get traffic_neighbor_flush_interval 'traffic' 'traffic_neighbor_flush_interval' '600'
 	config_get_bool connections_enabled 'connections' 'enabled'
 	config_get_bool dns_enabled 'dns' 'enabled'
 	config_get dns_max_records 'dns' 'dns_max_records'
@@ -60,8 +74,29 @@ start_service() {
 	if [ -n "$log_level" ]; then
 		args="$args --log-level $log_level"
 	fi
-	if [ -n "$tc_priority" ]; then
-		args="$args --tc-priority $tc_priority"
+	if [ -z "$tc_order" ]; then
+		case "$tc_priority" in
+			1) tc_order="first" ;;
+			65535) tc_order="last" ;;
+			*) tc_order="default" ;;
+		esac
+	fi
+	[ -z "$tc_order" ] && tc_order="default"
+	if [ -n "$tc_order" ]; then
+		args="$args --tc-order $tc_order"
+	fi
+	[ -z "$tc_backend" ] && tc_backend="auto"
+	if [ -n "$tc_backend" ]; then
+		args="$args --tc-backend $tc_backend"
+	fi
+	if [ -n "$netlink_priority" ]; then
+		args="$args --netlink-priority $netlink_priority"
+	fi
+	if [ -n "$tcx_anchor_ingress_id" ]; then
+		args="$args --tcx-anchor-ingress-id $tcx_anchor_ingress_id"
+	fi
+	if [ -n "$tcx_anchor_egress_id" ]; then
+		args="$args --tcx-anchor-egress-id $tcx_anchor_egress_id"
 	fi
 	
 	# 添加流量监控相关参数
@@ -88,6 +123,12 @@ start_service() {
 	fi
 	if [ "$traffic_exclude_iface_device" -eq 1 ]; then
 		args="$args --traffic-exclude-iface-device"
+	fi
+	if [ "$traffic_neighbor_flush_enable" -eq 1 ]; then
+		args="$args --traffic-neighbor-flush-enable"
+	fi
+	if [ -n "$traffic_neighbor_flush_interval" ]; then
+		args="$args --traffic-neighbor-flush-interval $traffic_neighbor_flush_interval"
 	fi
 	
 	# 添加连接统计监控参数

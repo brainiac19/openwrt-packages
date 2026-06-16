@@ -860,6 +860,9 @@ msgstr "Aún no hay reglas programadas, haga clic en \"Agregar regla\" para come
 msgid "Loading..."
 msgstr "Cargando..."
 
+msgid "Loading in chunks, please wait... (%d/%d)"
+msgstr "Carga por fragmentos, espere... (%d/%d)"
+
 msgid "No schedule rules"
 msgstr "No hay reglas programadas"
 
@@ -1163,8 +1166,92 @@ msgstr "Excluir dispositivo de interfaz"
 msgid "Exclude the router itself (interface device) from traffic statistics"
 msgstr "Excluir el propio router (dispositivo de interfaz) de las estadísticas de tráfico"
 
+msgid "Enable Neighbor Flush"
+msgstr "Habilitar vaciado de tabla de vecinos"
+
+msgid "Enable periodic flush of neighbor table data. Generally not recommended if the device list works normally."
+msgstr "Habilitar vaciado periódico de datos de la tabla de vecinos. Generalmente no se recomienda si la lista de dispositivos funciona con normalidad."
+
+msgid "Neighbor Flush Interval"
+msgstr "Intervalo de vaciado de tabla de vecinos"
+
+msgid "Set the interval for flushing neighbor table data"
+msgstr "Establecer el intervalo de vaciado de datos de la tabla de vecinos"
+
 msgid "No devices"
 msgstr "Sin dispositivos"
 
 msgid "LAN Traffic is viewed from the entire subnet perspective, so upload and download are always equal, forming a closed loop. Additionally, due to the presence of dedicated hardware switching chips, LAN traffic between 2 devices (e.g., PC - NAS) within the local network may not be monitorable."
 msgstr "El tráfico LAN se ve desde la perspectiva de toda la subred, por lo que la carga y descarga siempre son iguales, formando un bucle cerrado. Además, debido a la presencia de chips de conmutación de hardware dedicados, el tráfico LAN entre 2 dispositivos (p. ej., PC - NAS) dentro de la red local puede no ser monitoreable."
+
+msgid "Protocol"
+msgstr "Protocolo"
+
+msgid "State"
+msgstr "Estado"
+
+msgid "Send"
+msgstr "Enviar"
+
+msgid "Reply"
+msgstr "Respuesta"
+
+msgid "Flags"
+msgstr "Marcas"
+
+msgid "Loading…"
+msgstr "Cargando…"
+
+msgid "No connections"
+msgstr "Sin conexiones"
+
+msgid "pkts"
+msgstr "paquetes"
+
+msgid "Failed to load"
+msgstr "Error al cargar"
+
+msgid "Connection Details"
+msgstr "Detalles de conexión"
+
+msgid "Details"
+msgstr "Detalles"
+
+msgid "Orig Src"
+msgstr "Origen orig."
+
+msgid "Orig Dst"
+msgstr "Destino orig."
+
+msgid "Repl Src"
+msgstr "Origen resp."
+
+msgid "Repl Dst"
+msgstr "Destino resp."
+
+msgid "TC backend"
+msgstr "Backend de TC"
+
+msgid "Select TC attach backend. Recommendation: use auto by default; tcx is preferred on kernel >= 6.6; netlink is safer on older kernels."
+msgstr "Seleccione el backend de adjuncion TC. Recomendacion: use auto por defecto; tcx es preferible en kernel >= 6.6; netlink es mas seguro en kernels antiguos."
+
+msgid "TC order"
+msgstr "Orden de TC"
+
+msgid "Netlink priority"
+msgstr "Prioridad de Netlink"
+
+msgid "Only used when backend is netlink. Range: 0..65535 (0 means default)."
+msgstr "Solo se usa cuando el backend es netlink. Rango: 0..65535 (0 significa predeterminado)."
+
+msgid "TCX ingress anchor program id"
+msgstr "ID de programa ancla de ingreso TCX"
+
+msgid "Used when tc_order is before/after. Must be a valid ingress program id on the same interface."
+msgstr "Se usa cuando tc_order es before/after. Debe ser un ID de programa de ingreso valido en la misma interfaz."
+
+msgid "TCX egress anchor program id"
+msgstr "ID de programa ancla de egreso TCX"
+
+msgid "Used when tc_order is before/after. Must be a valid egress program id on the same interface."
+msgstr "Se usa cuando tc_order es before/after. Debe ser un ID de programa de egreso valido en la misma interfaz."

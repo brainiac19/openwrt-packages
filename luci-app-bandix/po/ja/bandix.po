@@ -860,6 +860,9 @@ msgstr "スケジュール制限ルールがまだありません。「ルール
 msgid "Loading..."
 msgstr "読み込み中..."
 
+msgid "Loading in chunks, please wait... (%d/%d)"
+msgstr "分割読み込み中です。しばらくお待ちください... (%d/%d)"
+
 msgid "No schedule rules"
 msgstr "スケジュール制限ルールなし"
 
@@ -1163,8 +1166,92 @@ msgstr "インターフェースデバイスを除外"
 msgid "Exclude the router itself (interface device) from traffic statistics"
 msgstr "トラフィック統計からルーター自体（インターフェースデバイス）を除外する"
 
+msgid "Enable Neighbor Flush"
+msgstr "ネイバーテーブルフラッシュを有効にする"
+
+msgid "Enable periodic flush of neighbor table data. Generally not recommended if the device list works normally."
+msgstr "ネイバーテーブルデータの定期フラッシュを有効にします。デバイスリストが正常に動作している場合は、通常は有効にしないことをお勧めします。"
+
+msgid "Neighbor Flush Interval"
+msgstr "ネイバーテーブルフラッシュ間隔"
+
+msgid "Set the interval for flushing neighbor table data"
+msgstr "ネイバーテーブルデータのフラッシュ間隔を設定"
+
 msgid "No devices"
 msgstr "デバイスなし"
 
 msgid "LAN Traffic is viewed from the entire subnet perspective, so upload and download are always equal, forming a closed loop. Additionally, due to the presence of dedicated hardware switching chips, LAN traffic between 2 devices (e.g., PC - NAS) within the local network may not be monitorable."
 msgstr "LANトラフィックはサブネット全体の視点から見られるため、アップロードとダウンロードは常に等しく、閉ループを形成します。さらに、専用ハードウェアスイッチングチップの存在により、ローカルネットワーク内の2つのデバイス（例：PC - NAS）間のLANトラフィックは監視できない可能性があります。"
+
+msgid "Protocol"
+msgstr "プロトコル"
+
+msgid "State"
+msgstr "状態"
+
+msgid "Send"
+msgstr "送信"
+
+msgid "Reply"
+msgstr "応答"
+
+msgid "Flags"
+msgstr "フラグ"
+
+msgid "Loading…"
+msgstr "読み込み中…"
+
+msgid "No connections"
+msgstr "接続なし"
+
+msgid "pkts"
+msgstr "パケット"
+
+msgid "Failed to load"
+msgstr "読み込み失敗"
+
+msgid "Connection Details"
+msgstr "接続詳細"
+
+msgid "Details"
+msgstr "詳細"
+
+msgid "Orig Src"
+msgstr "送信元"
+
+msgid "Orig Dst"
+msgstr "送信先"
+
+msgid "Repl Src"
+msgstr "応答元"
+
+msgid "Repl Dst"
+msgstr "応答先"
+
+msgid "TC backend"
+msgstr "TCバックエンド"
+
+msgid "Select TC attach backend. Recommendation: use auto by default; tcx is preferred on kernel >= 6.6; netlink is safer on older kernels."
+msgstr "TCアタッチのバックエンドを選択します。推奨: 既定ではautoを使用し、カーネル>= 6.6ではtcxを優先、古いカーネルではnetlinkの方が安全です。"
+
+msgid "TC order"
+msgstr "TC順序"
+
+msgid "Netlink priority"
+msgstr "Netlink優先度"
+
+msgid "Only used when backend is netlink. Range: 0..65535 (0 means default)."
+msgstr "backendがnetlinkの場合のみ使用します。範囲: 0..65535（0は既定）。"
+
+msgid "TCX ingress anchor program id"
+msgstr "TCX ingressアンカープログラムID"
+
+msgid "Used when tc_order is before/after. Must be a valid ingress program id on the same interface."
+msgstr "tc_orderがbefore/afterのときに使用します。同じインターフェース上の有効なingressプログラムIDである必要があります。"
+
+msgid "TCX egress anchor program id"
+msgstr "TCX egressアンカープログラムID"
+
+msgid "Used when tc_order is before/after. Must be a valid egress program id on the same interface."
+msgstr "tc_orderがbefore/afterのときに使用します。同じインターフェース上の有効なegressプログラムIDである必要があります。"

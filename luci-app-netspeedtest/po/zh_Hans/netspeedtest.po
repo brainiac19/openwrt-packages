@@ -19,14 +19,29 @@ msgstr "网速测试"
 msgid "A tool for testing network speed in multiple aspects"
 msgstr "一个用于从多方面测试本地和宽带网络速度的测速工具"
 
-msgid "Lan Speedtest Iperf3"
-msgstr "本地iperf3测速"
+msgid "Throughput speedtest Iperf3"
+msgstr "吞吐iperf3测速"
 
-msgid "Lan Speedtest Homebox"
-msgstr "本地homebox测速"
+msgid "Throughput speedtest Homebox"
+msgstr "吞吐homebox测速"
 
-msgid "Wan Ookla SpeedTest"
-msgstr "宽带Ookla测速"
+msgid "Wan SpeedTest"
+msgstr "宽带测速"
+
+msgid "Select Test Version"
+msgstr "选择测速版本"
+
+msgid "Select Server"
+msgstr "选择测速服务节点"
+
+msgid "Auto (Let speedtest decide)"
+msgstr "自动（由速度测试决定）"
+
+msgid "Server not obtained"
+msgstr "未获取到测速服务节点"
+
+msgid "View detailed results"
+msgstr "查看详细结果"
 
 msgid "Online SpeedTest"
 msgstr "在线宽带测速"
@@ -55,41 +70,29 @@ msgstr "Iperf3服务端"
 msgid "Command failed"
 msgstr "命令无效"
 
-msgid "Failed to read log file"
-msgstr "读取日志失败"
-
-msgid "No log content available"
-msgstr "没有日志记录"
 
 msgid "Error: "
 msgstr "错误: "
 
-msgid "Iperf3 service control"
-msgstr "Iperf3 服务控制"
+msgid "Service Control"
+msgstr "服务控制"
 
-msgid "Listen Port"
-msgstr "监听端口"
 
-msgid "Invalid format. Use [::]:port or ip:port"
-msgstr "格式错误.如 [::]:端口 或 ip:端口"
-
-msgid "Enable Log View"
-msgstr "开启日志显示"
 
 msgid "Download iperf3 client"
 msgstr "下载iperf3客户端"
 
-msgid "Run Log"
-msgstr "运行日志"
+msgid "Refresh every %s seconds."
+msgstr "每 %s 秒刷新"
 
-msgid "Refresh Log"
-msgstr "刷新日志"
+msgid "Clear logs"
+msgstr "清除日志"
 
 msgid "Official Website"
 msgstr "官方网站"
 
-msgid "Please enable the Homebox service"
-msgstr "请将homebox服务启用"
+msgid "Please start the Homebox service"
+msgstr "请启动homebox服务"
 
 msgid "Homebox service control"
 msgstr "Homebox服务控制"
@@ -103,16 +106,16 @@ msgstr "Homebox服务端未运行"
 msgid "Open Web Interface"
 msgstr "打开WEB页面"
 
-msgid "Start Ookla SpeedTest"
-msgstr "开始宽带测速"
+msgid "Start Speed Test"
+msgstr "开始测速"
 
-msgid "Click to execute"
-msgstr "点击执行"
+msgid "Click to start speed test"
+msgstr "点击开始测速"
 
-msgid "SpeedTesting in progress..."
+msgid "Speed testing in progress..."
 msgstr "测速中,请稍候..."
 
-msgid "Test failed."
+msgid "Test Failed"
 msgstr "测速失败"
 
 msgid "No test results yet."
@@ -130,6 +133,24 @@ msgstr "由于浏览器安全策略，Homebox接口https不能直接嵌入。"
 msgid "Select speed measurement station"
 msgstr "选择测速站点"
 
-msgid ""
-msgstr ""
+msgid "Iperf3 Port"
+msgstr "Iperf3监听端口"
+
+msgid "Port range must be 1024-65535"
+msgstr "端口范围1024-65535"
+
+msgid "Auto Start"
+msgstr "自动启动"
+
+msgid "Port Setting"
+msgstr "监听端口"
+
+msgid "Starting..."
+msgstr "启动中"
+
+msgid "Stopping..."
+msgstr "停止中"
+
+msgid "Test failed. Please check log for details."
+msgstr "测速失败，请查看日志"
 

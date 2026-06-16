@@ -1,8 +1,7 @@
 <h4 align="right"><strong>English</strong> | <a href="README_zh.md">简体中文</a></h4>
 <p align="center">
-    <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/logo/logo-circular.png" width="152"/>
+    <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/logo/logo-lockup.png" width="360" alt="Aurora Theme"/>
 </p>
-<h1 align="center">Aurora Theme</h1>
 <p align="center"><strong>A modern OpenWrt LuCI theme built with Vite and Tailwind CSS.</strong></p>
 <h4 align="center">🏔️ Pure | 🦢 Elegant | 📱 Responsive | 🌗 Dark/Light Mode | ⚙️ Settable </h4>
 <div align="center">
@@ -18,6 +17,7 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/eamonxg/assets/master/aurora/preview/theme/multi-device-showcase.png" alt="Multi-Device Showcase" width="100%">
 </div>
+
 
 ## Features
 
@@ -59,46 +59,26 @@ OpenWrt 25.12+ and snapshots use `apk`; other versions use `opkg`:
 - **opkg** (OpenWrt < 25.12):
 
   ```sh
-  cd /tmp && uclient-fetch -O luci-theme-aurora.ipk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.11.0-r20260208_all.ipk && opkg install luci-theme-aurora.ipk
+  cd /tmp && uclient-fetch -O luci-theme-aurora.ipk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.12.0-r20260531_all.ipk && opkg install luci-theme-aurora.ipk
   ```
 
 - **apk** (OpenWrt 25.12+ and snapshots):
   ```sh
-  cd /tmp && uclient-fetch -O luci-theme-aurora.apk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.11.0-r20260208.apk && apk add --allow-untrusted luci-theme-aurora.apk
+  cd /tmp && uclient-fetch -O luci-theme-aurora.apk https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk && apk add --allow-untrusted luci-theme-aurora.apk
   ```
 
 ## Contributing
 
-<details>
-<summary><b>Development</b></summary>
+Aurora uses **Vite** and a modern front-end toolchain, and is experimenting with end-to-end AI integration across the full development workflow. See [Development Documentation](.dev/docs/DEVELOPMENT.md) to get started. Suggestions and PRs are always welcome.
 
-<p>As we step into 2026, front-end toolchains have become mature and advanced, and modern browsers now support a wide range of exciting new features. Fully embracing the modern front-end ecosystem is at the core of the Aurora theme.</p>
-
-<p>Aurora uses <strong>Vite</strong> as the build tool.</p>
-
-<ul>
-<li>During development, you can freely choose and integrate any CSS toolchain.</li>
-<li>In production, multiple strategies are available to optimize bundled assets.</li>
-<li>Most importantly, with the help of a local proxy server, style changes can be previewed in real time!</li>
-</ul>
-
-<p>For more development information, see <a href=".dev/docs/DEVELOPMENT.md">Development Documentation</a>.</p>
-
-</details>
-
-<h4>Community</h4>
-
-<p>I've got a Discord server going - come hang out and chat! 👋 <a href="https://discord.gg/EBncRrzfTw">Join Discord</a></p>
+[discord.gg/EBncRrzfTw](https://discord.gg/EBncRrzfTw)
 
 ## License & Credits
 
-This project is licensed under the Apache License 2.0.
+[Apache 2.0](LICENSE). Thanks to:
 
-The production build structure is based on the official OpenWrt theme
-[luci-theme-bootstrap](https://github.com/openwrt/luci/tree/master/themes/luci-theme-bootstrap).
-
-Visual style and some implementations are influenced by
-[Apple](https://www.apple.com/) and [Vercel](https://vercel.com/).
-
-The project is developed using a modern front-end stack, including
-[Vite](https://vitejs.dev/) and [Tailwind CSS](https://tailwindcss.com/).
+- [luci-theme-bootstrap](https://github.com/openwrt/luci/tree/master/themes/luci-theme-bootstrap)
+- [Vite](https://vitejs.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Claude Code](https://claude.ai/code)
+- [Apple](https://www.apple.com/) and [Vercel](https://vercel.com/) — design inspiration

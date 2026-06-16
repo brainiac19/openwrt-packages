@@ -49,7 +49,7 @@ jobs:
           (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("git_clone https://github.com/kiddin9/openwrt-bypass"; "# git_clone https://github.com/kiddin9/openwrt-bypass") |
           (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("kiddin9/luci-app-adguardhome"; "rufengsuixing/luci-app-adguardhome") |
           (.jobs.merge.steps[] | select(.name == "Syn upstream").run) |= sub("git_clone https://github.com/muink/luci-app-netdata"; "git_clone https://github.com/sirpdboy/luci-app-netdata && mvdir luci-app-netdata") |
-          (.jobs.merge.steps[] | select(.name == "Apply patches").run) |= sub(" \\|\\|.*"; "") |
+          (.jobs.merge.steps[] | select(.name == "Apply patches").run) |= sub(" \\|\\|.*"; "\\|\\| true") |
           (.jobs.merge.steps[] | select(.name == "Modify").run) |= sub("TOKEN_KIDDIN9"; "GH_TOKEN")
           ' .github/workflows/upstream.yml
 

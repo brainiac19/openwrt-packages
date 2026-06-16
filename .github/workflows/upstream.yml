@@ -405,7 +405,7 @@ jobs:
         if: github.event.inputs.ssh == 'true'
       - name: Apply patches
         run: |
-          find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 --ignore-whitespace -i '%'"\|\| true
+          find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 --ignore-whitespace -i '%'"|| true
       - name: Modify
         run: |
           shopt -s extglob

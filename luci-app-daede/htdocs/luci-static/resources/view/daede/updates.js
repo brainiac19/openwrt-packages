@@ -131,8 +131,6 @@ function stamp() {
 
 return view.extend({
 	load: function() {
-		// background apk update so new versions show on next poll
-		fs.exec('/usr/share/luci-app-daede/refresh-index.sh', []).catch(function() {});
 		return Promise.all([
 			backend.detectBackend(),
 			uci.load('daed').catch(function() {}),
@@ -168,7 +166,7 @@ return view.extend({
 		};
 
 		// run a backgrounded script and stream its log into the log pane until it
-		// logs "done (rc=N)"; then refresh the badges. Result shows inline (no popup).
+		// logs a final ✓/✗ status line; then refresh the badges. Inline, no popup.
 		const runJob = function(script, arg, btn, logPath) {
 			const orig = btn.textContent;
 			btn.disabled = true;
@@ -177,7 +175,7 @@ return view.extend({
 			const poll = function() {
 				return L.resolveDefault(fs.read_direct(logPath, 'text'), '').then(function(c) {
 					if (c) { logPane.textContent = c; logPane.classList.add('show'); }
-					if (/done \(rc=\d+\)/.test(c)) { refresh(); return; }
+					if (/[✓✗]/.test(c)) { refresh(); return; }
 					if (tries++ > 90) return;
 					return new Promise(function(r) { setTimeout(r, 2000); }).then(poll);
 				});
@@ -379,6 +377,21 @@ return view.extend({
 
 		poll.add(refresh);
 		refresh();
+		// Start the potentially slow index refresh without holding a LuCI RPC
+		// request open, then re-probe promptly when its status changes to done.
+		const waitIndexRefresh = function(tries) {
+			return L.resolveDefault(fs.read_direct('/tmp/luci-app-daede.idx.status', 'text'), '').then(function(status) {
+				if (String(status).trim() === 'done')
+					return refresh();
+				if (tries <= 0)
+					return;
+				return new Promise(function(resolve) { setTimeout(resolve, 1000); })
+					.then(function() { return waitIndexRefresh(tries - 1); });
+			});
+		};
+		fs.exec('/usr/share/luci-app-daede/refresh-index.sh', [])
+			.then(function() { return waitIndexRefresh(30); })
+			.catch(function() {});
 
 		// === Geo data source (preset / custom URL + auto-update) ===
 		const geoSettings = (function() {

@@ -15,11 +15,11 @@ msgstr "默认证书文件会在 HTTPS 启动时生成；自定义路径必须�
 msgid "Gecoos AC"
 msgstr "集客AC控制器"
 
-msgid "Batch management Gecoos AP. The initial password is admin; change it immediately after first login."
-msgstr "批量集中管理集客 AP。初始密码为 admin；首次登录后请立即修改。"
-
 msgid "Supports Gecoos AP firmware 7.6 and above."
 msgstr "支持集客 AP 7.6 及以上版本固件。"
+
+msgid "The initial password is admin; change it immediately after first login."
+msgstr "初始密码为 admin；首次登录后请立即修改。"
 
 msgid "Global Settings"
 msgstr "全局设置"

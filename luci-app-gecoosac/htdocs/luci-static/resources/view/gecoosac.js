@@ -191,8 +191,8 @@ return view.extend({
 		let m, s, o, uploadDirOption;
 
 		m = new form.Map('gecoosac', _('Gecoos AC'),
-			_('Batch management Gecoos AP. The initial password is admin; change it immediately after first login.') + '<br />' +
-			_('Supports Gecoos AP firmware 7.6 and above.'));
+			_('Supports Gecoos AP firmware 7.6 and above.') + '<br />' +
+			_('The initial password is admin; change it immediately after first login.'));
 
 		s = m.section(form.TypedSection, 'gecoosac');
 		s.anonymous = true;

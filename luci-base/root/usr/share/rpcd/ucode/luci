@@ -228,9 +228,8 @@ const methods = {
 
 	getFeatures: {
 		call: function() {
-			const kernel_version = popen('echo -n `uname -r`').read('all');
 			const has_fw3 = access('/sbin/fw3') == true;
-			const has_fw4 = access('/sbin/fw4') == true;
+			const has_fw4 = access('/sbin/fw4') == true || access('/usr/sbin/fw4') == true;
 			const has_ipt_flowoffload = access('/sys/module/xt_FLOWOFFLOAD/refcnt') == true;
 			const has_nft_flowoffload = access('/sys/module/nft_flow_offload/refcnt') == true;
 			const ubus = connect();

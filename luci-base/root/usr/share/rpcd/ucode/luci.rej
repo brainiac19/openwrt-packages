@@ -1,0 +1,10 @@
+--- luci-base/root/usr/share/rpcd/ucode/luci
++++ luci-base/root/usr/share/rpcd/ucode/luci
+@@ -228,6 +228,7 @@ const methods = {
+ 
+ 	getFeatures: {
+ 		call: function() {
++			const kernel_version = popen('echo -n `uname -r`').read('all');
+ 			const has_fw3 = access('/sbin/fw3') == true;
+ 			const has_fw4 = access('/sbin/fw4') == true;
+ 			const has_ipt_flowoffload = access('/sys/module/xt_FLOWOFFLOAD/refcnt') == true;

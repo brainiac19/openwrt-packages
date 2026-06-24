@@ -248,7 +248,7 @@ const methods = {
 				mii_tool:   access('/usr/sbin/mii-tool'),
 				offloading: (has_fw3 && has_ipt_flowoffload) || (has_fw4 && has_nft_flowoffload),
 				offloading_hw: has_hw_offloading,
-				fullcone:   access(`/lib/modules/${kernel_version}/xt_FULLCONENAT.ko`) == true || access(`/lib/modules/${kernel_version}/nft_fullcone.ko`) == true,
+				fullcone:   access('/sys/module/xt_FULLCONENAT/refcnt') == true || access('/sys/module/nft_fullcone/refcnt') == true,
 				br2684ctl:  access('/usr/sbin/br2684ctl') == true,
 				swconfig:   access('/sbin/swconfig') == true,
 				zram:       access('/sys/class/zram-control') == true,

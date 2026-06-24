@@ -3,9 +3,34 @@
 'require rpc';
 'require ui';
 'require poll';
-'require view/run/i18n.json';
 
-var I18N = require('view/run/i18n.json');
+var I18N = null;
+
+function loadI18N() {
+	if (I18N)
+		return Promise.resolve();
+
+	return new Promise(function (resolve, reject) {
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', '/luci-static/resources/view/run/i18n.json', true);
+		xhr.onload = function () {
+			if (xhr.status >= 200 && xhr.status < 300) {
+				try {
+					I18N = JSON.parse(xhr.responseText);
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			} else {
+				reject(new Error('Failed to load i18n.json'));
+			}
+		};
+		xhr.onerror = function () {
+			reject(new Error('Network error loading i18n.json'));
+		};
+		xhr.send();
+	});
+}
 
 function getLang() {
 	try {
@@ -22,10 +47,16 @@ function getLang() {
 }
 
 function _(key) {
+	if (!I18N)
+		return key;
+
 	var lang = getLang();
-	var str = I18N[lang]?.[key] || I18N.zh[key] || key;
+	var str = (I18N[lang] && I18N[lang][key]) || (I18N.zh && I18N.zh[key]) || key;
 	var args = Array.prototype.slice.call(arguments, 1);
-	return str.format.apply(str, args);
+	if (args.length > 0) {
+		return str.format.apply(str, args);
+	}
+	return str;
 }
 
 var uploadStart = rpc.declare({
@@ -49,7 +80,7 @@ var uploadFinish = rpc.declare({
 var runInstaller = rpc.declare({
 	object: 'luci-app-run',
 	method: 'run',
-	params: ['id']
+	params: ['id', 'args']
 });
 
 var getStatus = rpc.declare({
@@ -106,52 +137,59 @@ return view.extend({
 
 	logOffset: 0,
 	currentUploadId: null,
+	currentFileType: null,
 	appVersion: 'unknown',
 	capabilities: { opkg: 1, apk: 1 },
 
 	load: function () {
 		var self = this;
-		return getVersion().then(function (res) {
-			if (res && res.version) {
-				self.appVersion = res.version;
-				var storedVersion = localStorage.getItem('luci-app-run-version');
-				if (storedVersion && storedVersion !== self.appVersion) {
-					localStorage.setItem('luci-app-run-version', self.appVersion);
-					window.location.reload(true);
-				} else {
-					localStorage.setItem('luci-app-run-version', self.appVersion);
+		return loadI18N().then(function () {
+			return getVersion().then(function (res) {
+				if (res && res.version) {
+					self.appVersion = res.version;
+					var storedVersion = localStorage.getItem('luci-app-run-version');
+					if (storedVersion && storedVersion !== self.appVersion) {
+						localStorage.setItem('luci-app-run-version', self.appVersion);
+						window.location.reload(true);
+					} else {
+						localStorage.setItem('luci-app-run-version', self.appVersion);
+					}
 				}
-			}
-			return getCapabilities().then(function (cap) {
-				if (cap) {
-					self.capabilities = {
-						opkg: cap.opkg || 0,
-						apk: cap.apk || 0
-					};
-				}
-				return getStatus().catch(function () {
-					return {};
+				return getCapabilities().then(function (cap) {
+					if (cap) {
+						self.capabilities = {
+							opkg: cap.opkg || 0,
+							apk: cap.apk || 0
+						};
+					}
+					return getStatus().catch(function () {
+						return {};
+					});
+				}).catch(function () {
+					return getStatus().catch(function () {
+						return {};
+					});
 				});
 			}).catch(function () {
-				return getStatus().catch(function () {
-					return {};
+				return getCapabilities().then(function (cap) {
+					if (cap) {
+						self.capabilities = {
+							opkg: cap.opkg || 0,
+							apk: cap.apk || 0
+						};
+					}
+					return getStatus().catch(function () {
+						return {};
+					});
+				}).catch(function () {
+					return getStatus().catch(function () {
+						return {};
+					});
 				});
 			});
 		}).catch(function () {
-			return getCapabilities().then(function (cap) {
-				if (cap) {
-					self.capabilities = {
-						opkg: cap.opkg || 0,
-						apk: cap.apk || 0
-					};
-				}
-				return getStatus().catch(function () {
-					return {};
-				});
-			}).catch(function () {
-				return getStatus().catch(function () {
-					return {};
-				});
+			return getStatus().catch(function () {
+				return {};
 			});
 		});
 	},
@@ -191,8 +229,8 @@ return view.extend({
 		}, ['']);
 
 		var pickButton = E('button', {
-			class: 'btn cbi-button cbi-button-apply',
-			style: 'background-color:#333;color:white;border-color:#333',
+			class: 'cbi-button cbi-button-apply run-btn',
+			style: 'background:#333!important;background-color:#333!important;background-image:none!important;color:#fff!important;border-color:#333!important;box-shadow:none!important;text-shadow:none!important;opacity:1!important',
 			click: function (ev) {
 				ev.preventDefault();
 				fileInput.click();
@@ -200,8 +238,8 @@ return view.extend({
 		}, [_('choose_file')]);
 
 		var ipkButton = E('button', {
-			class: 'btn cbi-button cbi-button-add',
-			style: 'margin-left:10px;background-color:#2E7D32;color:white',
+			class: 'cbi-button cbi-button-add run-btn',
+			style: 'margin-left:10px;background:#2E7D32!important;background-color:#2E7D32!important;background-image:none!important;color:#fff!important;border-color:#2E7D32!important;box-shadow:none!important;text-shadow:none!important;opacity:1!important',
 			click: function (ev) {
 				ev.preventDefault();
 				ipkInput.click();
@@ -209,8 +247,8 @@ return view.extend({
 		}, [_('choose_ipk')]);
 
 		var apkButton = E('button', {
-			class: 'btn cbi-button cbi-button-add',
-			style: 'margin-left:10px;background-color:#1565C0;color:white',
+			class: 'cbi-button cbi-button-add run-btn',
+			style: 'margin-left:10px;background:#1565C0!important;background-color:#1565C0!important;background-image:none!important;color:#fff!important;border-color:#1565C0!important;box-shadow:none!important;text-shadow:none!important;opacity:1!important',
 			click: function (ev) {
 				ev.preventDefault();
 				apkInput.click();
@@ -218,18 +256,27 @@ return view.extend({
 		}, [_('choose_apk')]);
 
 		var runButton = E('button', {
-			class: 'btn cbi-button cbi-button-action',
+			class: 'cbi-button cbi-button-action run-btn',
 			disabled: true,
-			style: 'min-width:140px;margin-left:15px;',
+			style: 'min-width:140px;margin-left:15px;background:#7B1FA2!important;background-color:#7B1FA2!important;background-image:none!important;color:#fff!important;border-color:#7B1FA2!important;box-shadow:none!important;text-shadow:none!important;opacity:1!important',
 			click: function (ev) {
 				ev.preventDefault();
-				self.startRun(runButton, state);
+
+				if (self.currentFileType === '.sh') {
+					self.showArgsDialog(function (args) {
+						if (args !== null) {
+							self.startRun(runButton, state, args.trim());
+						}
+					});
+				} else {
+					self.startRun(runButton, state, '');
+				}
 			}
 		}, [_('execute')]);
 
 		var cleanButton = E('button', {
-			class: 'btn cbi-button cbi-button-reset',
-			style: 'margin-left:35px;',
+			class: 'cbi-button cbi-button-reset run-btn',
+			style: 'margin-left:35px;background:#C62828!important;background-color:#C62828!important;background-image:none!important;color:#fff!important;border-color:#C62828!important;box-shadow:none!important;text-shadow:none!important;opacity:1!important',
 			click: function (ev) {
 				ev.preventDefault();
 				cleanup().then(function (res) {
@@ -238,6 +285,8 @@ return view.extend({
 
 					self.currentUploadId = null;
 					self.logOffset = 0;
+					self.prevRunning = false;
+					self.autoCleanType = null;
 					runButton.disabled = true;
 					log.textContent = '';
 					progress.style.display = 'none';
@@ -324,6 +373,10 @@ return view.extend({
 			return Promise.reject();
 		}
 
+		// 记录文件类型
+		var ext = file.name.match(/\.(run|sh|ipk|apk)$/i);
+		self.currentFileType = ext ? ext[0].toLowerCase() : null;
+
 		progress.style.display = '';
 		progress.value = 0;
 		runButton.disabled = true;
@@ -380,15 +433,16 @@ return view.extend({
 		});
 	},
 
-	startRun: function (runButton, state) {
+	startRun: function (runButton, state, args) {
 		var self = this;
 
 		if (!this.currentUploadId) return;
 
 		runButton.disabled = true;
 		state.textContent = _('starting');
+		self.autoCleanType = null;
 
-		return runInstaller(this.currentUploadId).then(function (res) {
+		return runInstaller(this.currentUploadId, args || '').then(function (res) {
 			if (res && res.error) {
 				var errorMsg = res.error;
 				if (res.error === 'ERR_NO_OPKG') {
@@ -400,11 +454,56 @@ return view.extend({
 			}
 
 			self.logOffset = 0;
+			self.prevRunning = true;
+			if (self.currentFileType === '.sh' || self.currentFileType === '.run') {
+				self.autoCleanType = self.currentFileType;
+			}
 			state.textContent = _('started', res.pid);
 		}).catch(function (err) {
 			runButton.disabled = false;
 			ui.addNotification(null, E('p', [err.message || err]), 'danger');
 		});
+	},
+
+	showArgsDialog: function (callback) {
+		var dialog = E('div', {
+			style: 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999'
+		}, [
+			E('div', {
+				style: 'background:#fff;border-radius:8px;padding:20px;width:400px;box-shadow:0 4px 20px rgba(0,0,0,0.3)'
+			}, [
+				E('input', {
+					type: 'text',
+					placeholder: _('args_hint'),
+					style: 'width:100%;padding:10px;margin-bottom:15px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px',
+					id: 'run-args-dialog-input'
+				}),
+				E('div', {
+					style: 'display:flex;justify-content:flex-end;gap:10px'
+				}, [
+					E('button', {
+						class: 'cbi-button cbi-button-reset',
+						style: 'padding:8px 20px;text-transform:none',
+						click: function () {
+							document.body.removeChild(dialog);
+							callback(null);
+						}
+					}, [_('cancel')]),
+					E('button', {
+						class: 'cbi-button cbi-button-action',
+						style: 'padding:8px 20px;text-transform:none',
+						click: function () {
+							var args = document.getElementById('run-args-dialog-input').value;
+							document.body.removeChild(dialog);
+							callback(args);
+						}
+					}, [_('confirm')])
+				])
+			])
+		]);
+
+		document.body.appendChild(dialog);
+		document.getElementById('run-args-dialog-input').focus();
 	},
 
 	refreshLog: function (log, state) {
@@ -420,8 +519,26 @@ return view.extend({
 
 			self.logOffset = res.offset || self.logOffset;
 
-			if (res.running)
+			if (res.running) {
 				state.textContent = _('running');
+				self.prevRunning = true;
+			} else if (self.prevRunning) {
+				// Installer just finished
+				self.prevRunning = false;
+
+				// Auto-cleanup for .sh and .run files
+				if (self.autoCleanType) {
+					self.autoCleanType = null;
+					cleanup().then(function () {
+						self.currentUploadId = null;
+						self.logOffset = 0;
+						log.textContent = '';
+						state.textContent = _('auto_cleaned');
+					}).catch(function () {
+						state.textContent = _('clean_done');
+					});
+				}
+			}
 		}).catch(function () { });
 	}
 });

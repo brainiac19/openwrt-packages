@@ -98,9 +98,17 @@ is_running() {
     
     echo "$cmdline" | grep -q "luci-app-run" && return 0
     
-    echo "$cmdline" | grep -q "[^a-zA-Z0-9]\.run\(\s\|$\)" && return 0
+    # Check for .run files (must be followed by space or end of string)
+    case "$cmdline" in
+        *".run "*) return 0 ;;
+        *".run") return 0 ;;
+    esac
     
-    echo "$cmdline" | grep -q "[^a-zA-Z0-9]\.sh\(\s\|$\)" && return 0
+    # Check for .sh files (must be followed by space or end of string)
+    case "$cmdline" in
+        *".sh "*) return 0 ;;
+        *".sh") return 0 ;;
+    esac
     
     return 1
 }
@@ -376,8 +384,19 @@ cleanup() {
         return
     fi
     
-    rm -rf "$UPLOAD_DIR" "$RUN_DIR" "$STATE_FILE"
-    mkdir -p "$UPLOAD_DIR" "$RUN_DIR"
+    rm -rf "$UPLOAD_DIR"
+    mkdir -p "$UPLOAD_DIR"
+    
+    # Keep state file but clear PID and FILE, preserve LOG path
+    if [ -n "$LOG" ]; then
+        echo "PID=" > "$STATE_FILE"
+        echo "FILE=" >> "$STATE_FILE"
+        echo "LOG=$LOG" >> "$STATE_FILE"
+        echo "STARTED=" >> "$STATE_FILE"
+    else
+        > "$STATE_FILE"
+    fi
+    
     json_ok "Cleaned"
 }
 

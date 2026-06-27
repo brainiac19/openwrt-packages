@@ -100,10 +100,16 @@ function getDefaultText(key) {
 }
 
 function cleanupStaleDialogs() {
-	var dialogs = document.querySelectorAll('div[style*="z-index:9999"]');
-	for (var i = 0; i < dialogs.length; i++) {
-		if (dialogs[i] && dialogs[i].parentNode) {
-			dialogs[i].parentNode.removeChild(dialogs[i]);
+	var allDivs = document.getElementsByTagName('div');
+	for (var i = allDivs.length - 1; i >= 0; i--) {
+		var div = allDivs[i];
+		if (!div || !div.parentNode) continue;
+		var style = window.getComputedStyle ? window.getComputedStyle(div) : div.style;
+		var isFixed = style.position === 'fixed' || (div.style && div.style.position === 'fixed');
+		var hasHighZ = (style.zIndex && parseInt(style.zIndex) >= 9000) || (div.style.zIndex && parseInt(div.style.zIndex) >= 9000);
+		var isOurDialog = div.style && (div.style.zIndex === '9999' || div.style.background && div.style.background.indexOf('rgba(0,0,0,0.5)') !== -1);
+		if (isFixed && (hasHighZ || isOurDialog)) {
+			div.parentNode.removeChild(div);
 		}
 	}
 }
@@ -414,18 +420,27 @@ return view.extend({
 		]);
 
 		fileInput.addEventListener('change', function () {
-			if (fileInput.files && fileInput.files.length)
-				self.uploadFile(fileInput.files[0], progress, state, runButton);
+			if (fileInput.files && fileInput.files.length) {
+				var selectedFile = fileInput.files[0];
+				fileInput.value = '';
+				self.uploadFile(selectedFile, progress, state, runButton);
+			}
 		});
 
 		ipkInput.addEventListener('change', function () {
-			if (ipkInput.files && ipkInput.files.length)
-				self.uploadFile(ipkInput.files[0], progress, state, runButton);
+			if (ipkInput.files && ipkInput.files.length) {
+				var selectedFile = ipkInput.files[0];
+				ipkInput.value = '';
+				self.uploadFile(selectedFile, progress, state, runButton);
+			}
 		});
 
 		apkInput.addEventListener('change', function () {
-			if (apkInput.files && apkInput.files.length)
-				self.uploadFile(apkInput.files[0], progress, state, runButton);
+			if (apkInput.files && apkInput.files.length) {
+				var selectedFile = apkInput.files[0];
+				apkInput.value = '';
+				self.uploadFile(selectedFile, progress, state, runButton);
+			}
 		});
 
 		setTimeout(function () {
@@ -765,10 +780,19 @@ return view.extend({
 				// Auto-cleanup for .sh and .run files
 				if (self.autoCleanType) {
 					self.autoCleanType = null;
+					var oldUploadId = self.currentUploadId;
+					var oldFileType = self.currentFileType;
 					cleanup().then(function () {
-						self.currentUploadId = null;
-						self.currentFileType = null;
-						state.textContent = _('auto_cleaned');
+						// Only clear state if user hasn't uploaded a new file in the meantime
+						if (self.currentUploadId === oldUploadId) {
+							self.currentUploadId = null;
+							self.currentFileType = null;
+						}
+						if (oldFileType) {
+							state.textContent = _('auto_cleaned');
+						} else {
+							state.textContent = _('clean_done');
+						}
 					}).catch(function () {
 						state.textContent = _('clean_done');
 					});

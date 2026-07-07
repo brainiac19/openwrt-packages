@@ -69,8 +69,9 @@ return view.extend({
 				'%h'.format(rule.descr),
 				E('button', {
 					'class': 'btn cbi-button-remove',
-					'click': L.bind(handleDelRule, this, rule.num)
-				}, [ _('Delete') ])
+					'click': L.bind(handleDelRule, this, rule.num),
+					'title': _('Delete')
+				}, [_('Delete')])
 			];
 		});
 
@@ -81,35 +82,42 @@ return view.extend({
 
 		let m, s, o;
 
-		var protocols = '%s & %s/%s'.format(
+		const protocols = _('%s & %s/%s', '%s & %s/%s (%s = UPnP IGD, %s = PCP, %s = NAT-PMP)').format(
 			'<a href="https://en.wikipedia.org/wiki/Internet_Gateway_Device_Protocol" target="_blank" rel="noreferrer"><abbr title="UPnP Internet Gateway Device (Control Protocol)">UPnP IGD</abbr></a>',
 			'<a href="https://en.wikipedia.org/wiki/Port_Control_Protocol" target="_blank" rel="noreferrer"><abbr title="Port Control Protocol">PCP</abbr></a>',
 			'<a href="https://en.wikipedia.org/wiki/NAT_Port_Mapping_Protocol" target="_blank" rel="noreferrer"><abbr title="NAT Port Mapping Protocol">NAT-PMP</abbr></a>');
-		m = new form.Map('upnpd', [_('UPnP IGD & PCP/NAT-PMP Service')],
+		m = new form.Map('upnpd', _('UPnP IGD & PCP/NAT-PMP Service'),
 			_('The %s protocols allow clients on the local network to configure port maps/forwards on the router autonomously.',
 				'The %s (%s = UPnP IGD & PCP/NAT-PMP) protocols allow clients on the local network to configure port maps/forwards on the router autonomously.')
-				.format(protocols)
+			.format(protocols)
 		);
+		if (!uci.get('upnpd', 'config')) {
+			ui.addNotification(null, E('div', '<h4>' + _('No suitable configuration was found!') + '</h4><p>' +
+				_('No suitable config (LuCI app %s) found in %s. A related package update (daemon or LuCI app) may be missing.').format('v1.0', '<code>/etc/config/upnpd</code>') + '<br />' +
+				_('Use the software package manager, update lists, and install the related update. Config is migrated with the daemon package update.') + '</p>' +
+				'<a class="btn" href="/cgi-bin/luci/admin/system/package-manager?query=UPnP%20IGD%20&amp;%20PCP/NAT-PMP">' + _('Go to package manager…') + '</a>'), 'warning');
+			m.readonly = true;
+		}
 
 		s = m.section(form.GridSection, '_active_rules');
 
 		s.render = L.bind(function(view, section_id) {
-			var table = E('table', { 'class': 'table cbi-section-table', 'id': 'upnp_status_table' }, [
+			const table = E('table', { 'class': 'table cbi-section-table', 'id': 'upnp_status_table' }, [
 				E('tr', { 'class': 'tr table-titles' }, [
-					E('th', { 'class': 'th' }, _('Client Name')),
-					E('th', { 'class': 'th' }, _('Client Address')),
-					E('th', { 'class': 'th' }, _('Client Port')),
-					E('th', { 'class': 'th' }, _('External Port')),
+					E('th', { 'class': 'th' }, _('Hostname')),
+					E('th', { 'class': 'th' }, _('IP address')),
+					E('th', { 'class': 'th' }, _('Port')),
+					E('th', { 'class': 'th' }, _('External port')),
 					E('th', { 'class': 'th' }, _('Protocol')),
 					E('th', { 'class': 'th right' }, _('Expires')),
-					E('th', { 'class': 'th' }, _('Description')),
+					E('th', { 'class': 'th' }, _('Added via / description')),
 					E('th', { 'class': 'th cbi-section-actions' }, '')
 				])
 			]);
 
-			var rules = Array.isArray(data[0].rules) ? data[0].rules : [];
+			const rules = Array.isArray(data[0].rules) ? data[0].rules : [];
 
-			var rows = rules.map(function(rule) {
+			const rows = rules.map(function(rule) {
 				return [
 					rule.host_hint || _('Unknown'),
 					rule.intaddr,
@@ -119,16 +127,17 @@ return view.extend({
 					rule.descr,
 					E('button', {
 						'class': 'btn cbi-button-remove',
-					'click': L.bind(handleDelRule, this, rule.num),
-					'title': _('Delete')
-				}, [_('Delete')])
+						'click': L.bind(handleDelRule, this, rule.num),
+						'title': _('Delete')
+					}, [_('Delete')])
 				];
 			});
 
 			cbi_update_table(table, rows, E('em', _('There are no active port maps.')));
 
 			return E('div', { 'class': 'cbi-section cbi-tblsection' }, [
-					E('h3', _('Active Service Port Maps')), table ]);
+				E('h3', _('Active Port Maps')), table
+			]);
 		}, o, this);
 
 		s = m.section(form.NamedSection, 'config', 'upnpd', _('Service Settings'));

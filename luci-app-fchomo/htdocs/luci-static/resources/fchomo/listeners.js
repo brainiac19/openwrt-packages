@@ -117,6 +117,7 @@ function renderListeners(s, uciconfig, isClient) {
 	let o;
 
 	s.tab('field_general', _('General fields'));
+	s.tab('field_plugin', _('Plugin fields'));
 	s.tab('field_vless_encryption', _('Vless Encryption fields'));
 	s.tab('field_hysteria2_realm', _('Hysteria2 Realm fields'));
 	s.tab('field_tls', _('TLS fields'));
@@ -169,86 +170,6 @@ function renderListeners(s, uciconfig, isClient) {
 	o.rmempty = false;
 	o.depends({type: /^(http|socks|mixed|mieru|trojan|anytls|hysteria2|trusttunnel)$/, username: /.+/});
 	o.depends({type: /^(tuic)$/, uuid: /.+/});
-	o.modalonly = true;
-
-	/* Hysteria2 fields */
-	o = s.taboption('field_general', form.Value, 'hysteria_up_mbps', _('Max upload speed'),
-		_('In Mbps.'));
-	o.datatype = 'uinteger';
-	o.depends('type', 'hysteria2');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria_down_mbps', _('Max download speed'),
-		_('In Mbps.'));
-	o.datatype = 'uinteger';
-	o.depends('type', 'hysteria2');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Flag, 'hysteria_ignore_client_bandwidth', _('Ignore client bandwidth'),
-		_('Tell the client to use the BBR flow control algorithm instead of Hysteria CC.'));
-	o.default = o.disabled;
-	o.depends({type: 'hysteria2', hysteria_up_mbps: '', hysteria_down_mbps: ''});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
-	o.value('', _('Disable'));
-	o.value('salamander', _('Salamander'));
-	o.value('gecko', _('Gecko'));
-	o.depends('type', 'hysteria2');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', hm.GenValue, 'hysteria_obfs_password', _('Obfuscate password'),
-		_('Enabling obfuscation will make the server incompatible with standard QUIC connections, losing the ability to masquerade with HTTP/3.'));
-	o.password = true;
-	o.rmempty = false;
-	o.depends('type', 'hysteria');
-	o.depends({type: 'hysteria2', hysteria_obfs_type: /.+/});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria_obfs_min_packet_size', _('Obfuscate minimum packet size'));
-	o.placeholder = '512'
-	o.depends('hysteria_obfs_type', 'gecko');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria_obfs_max_packet_size', _('Obfuscate maximum packet size'));
-	o.placeholder = '1200'
-	o.depends('hysteria_obfs_type', 'gecko');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria_masquerade', _('Masquerade'),
-		_('HTTP3 server behavior when authentication fails.<br/>A 404 page will be returned if empty.'));
-	o.placeholder = 'file:///var/www or http://127.0.0.1:8080'
-	o.depends('type', 'hysteria2');
-	o.modalonly = true;
-
-	/* Hysteria2 Realmserver fields */
-	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_token', _('Pre-shared key'));
-	o.placeholder = 'public';
-	o.rmempty = false;
-	o.depends('type', 'hysteria2-realm');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_max_realms', _('Max realms'));
-	o.datatype = 'uinteger';
-	o.placeholder = '65536';
-	o.depends('type', 'hysteria2-realm');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_max_realms_per_ip', _('Max realms per client IP'));
-	o.datatype = 'uinteger';
-	o.placeholder = '4';
-	o.depends('type', 'hysteria2-realm');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_trusted_proxy_header', _('Trusted proxy header'),
-		_('Header to read real client IP from (e.g. X-Forwarded-For)'));
-	o.depends('type', 'hysteria2-realm');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_realm_name_pattern', _('Realm name pattern'));
-	o.default = '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$';
-	o.rmempty = false;
-	o.depends('type', 'hysteria2-realm');
 	o.modalonly = true;
 
 	/* Shadowsocks fields */
@@ -470,31 +391,26 @@ function renderListeners(s, uciconfig, isClient) {
 	o.depends('type', 'snell');
 	o.modalonly = true;
 
-	/* Tuic fields */
-	o = s.taboption('field_general', hm.GenValue, 'uuid', _('UUID'));
+	/* VMess / VLESS fields */
+	o = s.taboption('field_general', hm.GenValue, 'vmess_uuid', _('UUID'));
 	o.rmempty = false;
 	o.validate = hm.validateUUID;
-	o.depends('type', 'tuic');
+	o.depends({type: /^(vmess|vless)$/});
 	o.modalonly = true;
 
-	o = s.taboption('field_general', form.Value, 'tuic_max_udp_relay_packet_size', _('Max UDP relay packet size'));
+	o = s.taboption('field_general', form.ListValue, 'vless_flow', _('Flow'));
+	o.default = hm.vless_flow[0][0];
+	hm.vless_flow.forEach((res) => {
+		o.value.apply(o, res);
+	})
+	o.depends('type', 'vless');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'vmess_alterid', _('Alter ID'),
+		_('Legacy protocol support (VMess MD5 Authentication) is provided for compatibility purposes only, use of alterId > 1 is not recommended.'));
 	o.datatype = 'uinteger';
-	o.default = '1500';
-	o.depends('type', 'tuic');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'tuic_max_idle_time', _('Idle timeout'),
-		_('In seconds.'));
-	o.default = '15000';
-	o.validate = hm.validateTimeDuration;
-	o.depends('type', 'tuic');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'tuic_authentication_timeout', _('Auth timeout'),
-		_('In seconds.'));
-	o.default = '1000';
-	o.validate = hm.validateTimeDuration;
-	o.depends('type', 'tuic');
+	o.placeholder = '0';
+	o.depends('type', 'vmess');
 	o.modalonly = true;
 
 	/* Trojan fields */
@@ -525,26 +441,111 @@ function renderListeners(s, uciconfig, isClient) {
 	o.depends('type', 'anytls');
 	o.modalonly = true;
 
-	/* VMess / VLESS fields */
-	o = s.taboption('field_general', hm.GenValue, 'vmess_uuid', _('UUID'));
+	/* Tuic fields */
+	o = s.taboption('field_general', hm.GenValue, 'uuid', _('UUID'));
 	o.rmempty = false;
 	o.validate = hm.validateUUID;
-	o.depends({type: /^(vmess|vless)$/});
+	o.depends('type', 'tuic');
 	o.modalonly = true;
 
-	o = s.taboption('field_general', form.ListValue, 'vless_flow', _('Flow'));
-	o.default = hm.vless_flow[0][0];
-	hm.vless_flow.forEach((res) => {
-		o.value.apply(o, res);
-	})
-	o.depends('type', 'vless');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'vmess_alterid', _('Alter ID'),
-		_('Legacy protocol support (VMess MD5 Authentication) is provided for compatibility purposes only, use of alterId > 1 is not recommended.'));
+	o = s.taboption('field_general', form.Value, 'tuic_max_udp_relay_packet_size', _('Max UDP relay packet size'));
 	o.datatype = 'uinteger';
-	o.placeholder = '0';
-	o.depends('type', 'vmess');
+	o.default = '1500';
+	o.depends('type', 'tuic');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'tuic_max_idle_time', _('Idle timeout'),
+		_('In seconds.'));
+	o.default = '15000';
+	o.validate = hm.validateTimeDuration;
+	o.depends('type', 'tuic');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'tuic_authentication_timeout', _('Auth timeout'),
+		_('In seconds.'));
+	o.default = '1000';
+	o.validate = hm.validateTimeDuration;
+	o.depends('type', 'tuic');
+	o.modalonly = true;
+
+	/* Hysteria2 fields */
+	o = s.taboption('field_general', form.Value, 'hysteria_up_mbps', _('Max upload speed'),
+		_('In Mbps.'));
+	o.datatype = 'uinteger';
+	o.depends('type', 'hysteria2');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria_down_mbps', _('Max download speed'),
+		_('In Mbps.'));
+	o.datatype = 'uinteger';
+	o.depends('type', 'hysteria2');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Flag, 'hysteria_ignore_client_bandwidth', _('Ignore client bandwidth'),
+		_('Tell the client to use the BBR flow control algorithm instead of Hysteria CC.'));
+	o.default = o.disabled;
+	o.depends({type: 'hysteria2', hysteria_up_mbps: '', hysteria_down_mbps: ''});
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
+	o.value('', _('Disable'));
+	o.value('salamander', _('Salamander'));
+	o.value('gecko', _('Gecko'));
+	o.depends('type', 'hysteria2');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', hm.GenValue, 'hysteria_obfs_password', _('Obfuscate password'),
+		_('Enabling obfuscation will make the server incompatible with standard QUIC connections, losing the ability to masquerade with HTTP/3.'));
+	o.password = true;
+	o.rmempty = false;
+	o.depends('type', 'hysteria');
+	o.depends({type: 'hysteria2', hysteria_obfs_type: /.+/});
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria_obfs_min_packet_size', _('Obfuscate minimum packet size'));
+	o.placeholder = '512'
+	o.depends('hysteria_obfs_type', 'gecko');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria_obfs_max_packet_size', _('Obfuscate maximum packet size'));
+	o.placeholder = '1200'
+	o.depends('hysteria_obfs_type', 'gecko');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria_masquerade', _('Masquerade'),
+		_('HTTP3 server behavior when authentication fails.<br/>A 404 page will be returned if empty.'));
+	o.placeholder = 'file:///var/www or http://127.0.0.1:8080'
+	o.depends('type', 'hysteria2');
+	o.modalonly = true;
+
+	/* Hysteria2 Realmserver fields */
+	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_token', _('Pre-shared key'));
+	o.placeholder = 'public';
+	o.rmempty = false;
+	o.depends('type', 'hysteria2-realm');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_max_realms', _('Max realms'));
+	o.datatype = 'uinteger';
+	o.placeholder = '65536';
+	o.depends('type', 'hysteria2-realm');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_max_realms_per_ip', _('Max realms per client IP'));
+	o.datatype = 'uinteger';
+	o.placeholder = '4';
+	o.depends('type', 'hysteria2-realm');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_trusted_proxy_header', _('Trusted proxy header'),
+		_('Header to read real client IP from (e.g. X-Forwarded-For)'));
+	o.depends('type', 'hysteria2-realm');
+	o.modalonly = true;
+
+	o = s.taboption('field_general', form.Value, 'hysteria2_realmserver_realm_name_pattern', _('Realm name pattern'));
+	o.default = '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$';
+	o.rmempty = false;
+	o.depends('type', 'hysteria2-realm');
 	o.modalonly = true;
 
 	/* TrustTunnel fields */
@@ -556,72 +557,11 @@ function renderListeners(s, uciconfig, isClient) {
 	o.depends('type', 'tunnel');
 	o.modalonly = true;
 
-	/* Plugin fields */
-	o = s.taboption('field_general', form.ListValue, 'plugin', _('Plugin'));
-	o.value('', _('none'));
-	o.value('obfs', _('obfs-simple'));
-	o.value('shadow-tls', _('shadow-tls'));
-	o.value('restls', _('restls'));
-	//o.value('kcp-tun', _('kcp-tun'));
-	o.validate = function(section_id, value) {
-		const type = this.section.getOption('type').formvalue(section_id);
-
-		if (value) {
-			if (type === 'snell' && !['obfs', 'shadow-tls'].includes(value)) {
-				return _('Expecting: only support %s.').format(_('obfs-simple') +
-					' / ' + _('shadow-tls'));
-			}
-		}
-
-		return true;
-	}
-	o.depends({type: /^(shadowsocks|snell)$/});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.ListValue, 'plugin_opts_obfsmode', _('Plugin: ') + _('Obfs Mode'));
-	o.value('http', _('HTTP'));
-	o.value('tls', _('TLS'));
-	o.depends('plugin', 'obfs');
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'plugin_opts_host', _('Plugin: ') + _('Host that supports TLS 1.3'));
-	o.datatype = 'hostname';
-	o.placeholder = 'cloud.tencent.com';
-	o.rmempty = false;
-	o.depends({plugin: 'obfs', type: 'snell'});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'plugin_opts_handshake_dest', _('Plugin: ') + _('Handshake target that supports TLS 1.3'));
-	o.datatype = 'hostport';
-	o.placeholder = 'cloud.tencent.com:443';
-	o.rmempty = false;
-	o.depends({plugin: /^(shadow-tls|restls)$/});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', hm.GenValue, 'plugin_opts_thetlspassword', _('Plugin: ') + _('Password'));
-	o.password = true;
-	o.rmempty = false;
-	o.depends({plugin: /^(shadow-tls|restls)$/});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.ListValue, 'plugin_opts_shadowtls_version', _('Plugin: ') + _('Version'));
-	o.value('1', _('v1'));
-	o.value('2', _('v2'));
-	o.value('3', _('v3'));
-	o.default = '3';
-	o.depends({plugin: 'shadow-tls'});
-	o.modalonly = true;
-
-	o = s.taboption('field_general', form.Value, 'plugin_opts_restls_script', _('Plugin: ') + _('Restls script'));
-	o.default = '300?100<1,400~100,350~100,600~100,300~200,300~100';
-	o.rmempty = false;
-	o.depends({plugin: 'restls'});
-	o.modalonly = true;
-
 	/* Extra fields */
 	if (isClient) {
 		o = s.taboption('field_general', form.Value, 'routing_mark', _('Routing mark (Fwmark)'));
 		o.datatype = 'uinteger';
+		o.modalonly = false;
 		o.editable = true;
 
 		o = s.taboption('field_general', hm.ListValue, 'rule', _('Sub rule'),
@@ -633,6 +573,7 @@ function renderListeners(s, uciconfig, isClient) {
 				...hm.loadLabelValues(this.config, 'subrule-group')
 			], section_id);
 		}
+		o.modalonly = false;
 		o.editable = true;
 
 		o = s.taboption('field_general', hm.ListValue, 'proxy', _('Proxy group'),
@@ -647,6 +588,7 @@ function renderListeners(s, uciconfig, isClient) {
 				...hm.loadLabelValues(this.config, 'proxy_group')
 			], section_id);
 		}
+		o.modalonly = false;
 		o.editable = true;
 	}
 
@@ -677,6 +619,72 @@ function renderListeners(s, uciconfig, isClient) {
 	o = s.taboption('field_general', form.Flag, 'udp', _('UDP'));
 	o.default = o.enabled;
 	o.depends({type: /^(socks|mixed|shadowsocks|snell)$/});
+	o.modalonly = true;
+
+	/* Plugin fields */
+	o = s.taboption('field_general', form.Flag, 'plugin', _('Plugin'));
+	o.default = o.disabled;
+	o.depends({type: /^(shadowsocks|snell)$/});
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.ListValue, 'plugin_type', _('Plugin type'));
+	o.value('obfs', _('obfs-simple'));
+	o.value('shadow-tls', _('shadow-tls'));
+	o.value('restls', _('restls'));
+	//o.value('kcp-tun', _('kcp-tun'));
+	o.validate = function(section_id, value) {
+		const type = this.section.getOption('type').formvalue(section_id);
+
+		if (value) {
+			if (type === 'snell' && !['obfs', 'shadow-tls'].includes(value)) {
+				return _('Expecting: only support %s.').format(_('obfs-simple') +
+					' / ' + _('shadow-tls'));
+			}
+		}
+
+		return true;
+	}
+	o.depends('plugin', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.ListValue, 'plugin_opts_obfsmode', _('Obfs Mode'));
+	o.value('http', _('HTTP'));
+	o.value('tls', _('TLS'));
+	o.depends('plugin_type', 'obfs');
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.Value, 'plugin_opts_host', _('Host that supports TLS 1.3'));
+	o.datatype = 'hostname';
+	o.placeholder = 'cloud.tencent.com';
+	o.rmempty = false;
+	o.depends({plugin_type: 'obfs', type: 'snell'});
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.Value, 'plugin_opts_handshake_dest', _('Handshake target that supports TLS 1.3'));
+	o.datatype = 'hostport';
+	o.placeholder = 'cloud.tencent.com:443';
+	o.rmempty = false;
+	o.depends({plugin_type: /^(shadow-tls|restls)$/});
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', hm.GenValue, 'plugin_opts_thetlspassword', _('Password'));
+	o.password = true;
+	o.rmempty = false;
+	o.depends({plugin_type: /^(shadow-tls|restls)$/});
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.ListValue, 'plugin_opts_shadowtls_version', _('Version'));
+	o.value('1', _('v1'));
+	o.value('2', _('v2'));
+	o.value('3', _('v3'));
+	o.default = '3';
+	o.depends({plugin_type: 'shadow-tls'});
+	o.modalonly = true;
+
+	o = s.taboption('field_plugin', form.Value, 'plugin_opts_restls_script', _('Restls script'));
+	o.default = '300?100<1,400~100,350~100,600~100,300~200,300~100';
+	o.rmempty = false;
+	o.depends({plugin_type: 'restls'});
 	o.modalonly = true;
 
 	/* Vless Encryption fields */
@@ -947,8 +955,8 @@ function renderListeners(s, uciconfig, isClient) {
 			let def_alpn;
 
 			switch (type) {
-				case 'hysteria2':
 				case 'tuic':
+				case 'hysteria2':
 					def_alpn = ['h3'];
 					break;
 				case 'hysteria2-realm':
@@ -1032,7 +1040,7 @@ function renderListeners(s, uciconfig, isClient) {
 	hm.tls_client_auth_types.forEach((res) => {
 		o.value.apply(o, res);
 	})
-	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|hysteria2|hysteria2-realm|tuic|trusttunnel)$/});
+	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|tuic|hysteria2|hysteria2-realm|trusttunnel)$/});
 	o.modalonly = true;
 
 	o = s.taboption('field_tls', form.Value, 'tls_client_auth_cert_path', _('Client Auth Certificate path') + _(' (mTLS)'),
@@ -1041,7 +1049,7 @@ function renderListeners(s, uciconfig, isClient) {
 	o.validate = function(/* ... */) {
 		return hm.validateMTLSClientAuth.call(this, 'tls_client_auth_type', ...arguments);
 	}
-	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|hysteria2|hysteria2-realm|tuic|trusttunnel)$/});
+	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|tuic|hysteria2|hysteria2-realm|trusttunnel)$/});
 	o.modalonly = true;
 
 	o = s.taboption('field_tls', form.Button, '_upload_client_auth_cert', _('Upload certificate') + _(' (mTLS)'),
@@ -1090,13 +1098,13 @@ function renderListeners(s, uciconfig, isClient) {
 
 		return node;
 	}
-	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|hysteria2|hysteria2-realm|tuic|trusttunnel)$/});
+	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|tuic|hysteria2|hysteria2-realm|trusttunnel)$/});
 	o.modalonly = true;
 
 	o = s.taboption('field_tls', hm.CopyValue, 'tls_ech_config', _('ECH config'),
 		_('This ECH parameter needs to be added to the HTTPS record of the domain.'));
 	o.placeholder = 'AEn+DQBFKwAgACABWIHUGj4u+PIggYXcR5JF0gYk3dCRioBW8uJq9H4mKAAIAAEAAQABAANAEnB1YmxpYy50bHMtZWNoLmRldgAA';
-	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|hysteria2|hysteria2-realm|tuic|trusttunnel)$/});
+	o.depends({tls: '1', type: /^(http|socks|mixed|vmess|vless|trojan|anytls|tuic|hysteria2|hysteria2-realm|trusttunnel)$/});
 	o.modalonly = true;
 
 	// uTLS fields
@@ -1235,7 +1243,7 @@ function renderListeners(s, uciconfig, isClient) {
 	/* Multiplex fields */
 	o = s.taboption('field_general', form.Flag, 'smux_enabled', _('Multiplex'));
 	o.default = o.disabled;
-	o.depends({type: /^(shadowsocks|vmess|vless|trojan|tuic|hysteria2|sudoku)$/});
+	o.depends({type: /^(shadowsocks|sudoku|vmess|vless|trojan|tuic|hysteria2)$/});
 	o.modalonly = true;
 
 	o = s.taboption('field_multiplex', form.Flag, 'smux_padding', _('Enable padding'));

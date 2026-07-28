@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-nginx-pingos
 PKG_VERSION:=1.19.6
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 
 PKG_SOURCE:=nginx-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://nginx.org/download/
@@ -25,7 +25,7 @@ define Package/$(PKG_NAME)
   TITLE:=PingOS server
   PKGARCH:=all
   URL:=https://pingos.io/
-  DEPENDS:=+libpcre +libopenssl +zlib +libpthread
+  DEPENDS:=+libpcre2 +libopenssl +zlib +libpthread
 endef
 
 define Package/$(PKG_NAME)/conffiles

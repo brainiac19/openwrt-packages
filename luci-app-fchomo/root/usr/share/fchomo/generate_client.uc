@@ -148,16 +148,21 @@ function get_nameserver(cfg, detour) {
 
 	let servers = [];
 	for (let k in cfg) {
-		if (k === 'system-dns') {
-			push(servers, 'system');
-		} else if (k === 'default-dns') {
-			map(wan_dns, (dns) => {
-				push(servers, dns + '#DIRECT');
-			});
-		} else
-			push(servers, replace(dnsservers[k]?.address || '', /#detour=([^&]+)/, (m, c1) => {
-				return '#' + urlencode(get_proxy(detour || c1));
-			}));
+		switch (k) {
+			case 'system-dns':
+				push(servers, 'system');
+				break;
+			case 'default-dns':
+				map(wan_dns, (dns) => {
+					push(servers, dns + '#DIRECT');
+				});
+				break;
+			default:
+				push(servers, replace(dnsservers[k]?.address || '', /#detour=([^&]+)/, (m, c1) => {
+					return '#' + urlencode(get_proxy(detour || c1));
+				}));
+				break;
+		}
 	}
 
 	return servers;
@@ -209,12 +214,16 @@ uci.foreach(uciconf, ucichain, (cfg) => {
 		return;
 
 	let identifier = '';
-	if (cfg.type === 'provider')
-		identifier = cfg.chain_head_sub;
-	else if (cfg.type === 'node')
-		identifier = cfg.chain_head;
-	else
-		return;
+	switch (cfg.type) {
+		case 'provider':
+			identifier = cfg.chain_head_sub;
+			break;
+		case 'node':
+			identifier = cfg.chain_head;
+			break;
+		default:
+			return;
+	}
 
 	dialerproxy[identifier] = {
 		detour: get_proxy(cfg.chain_tail_group) || get_proxy(cfg.chain_tail)
@@ -431,13 +440,17 @@ map([
 			return null;
 
 		let key;
-		if (cfg.type === 'domain') {
-			key = isEmpty(cfg.domain) ? null : join(',', cfg.domain);
-		} else if (cfg.type === 'geosite') {
-			key = isEmpty(cfg.geosite) ? null : 'geosite:' + join(',', cfg.geosite);
-		} else if (cfg.type === 'rule_set') {
-			key = isEmpty(cfg.rule_set) ? null : 'rule-set:' + join(',', cfg.rule_set);
-		};
+		switch (cfg.type) {
+			case 'domain':
+				key = isEmpty(cfg.domain) ? null : join(',', cfg.domain);
+				break;
+			case 'geosite':
+				key = isEmpty(cfg.geosite) ? null : 'geosite:' + join(',', cfg.geosite);
+				break;
+			case 'rule_set':
+				key = isEmpty(cfg.rule_set) ? null : 'rule-set:' + join(',', cfg.rule_set);
+				break;
+		}
 
 		if (!key)
 			return null;
@@ -501,17 +514,14 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"target-rematch-name": cfg.target_rematch_name,
 		"target-sub-rule": cfg.target_sub_rule,
 
-		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / TUIC / hysteria2 / WireGuard / Masque */
+		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / TUIC / hysteria2 / ZeroTier / Tailscale / Masque */
 		username: cfg.username,
 		uuid: cfg.vmess_uuid || cfg.uuid,
 		cipher: cfg.vmess_chipher || cfg.shadowsocks_chipher,
 		password: cfg.shadowsocks_password || cfg.password,
 		headers: cfg.headers ? json(cfg.headers) : null,
-		ip: cfg.masque_ip || cfg.wireguard_ip,
-		ipv6: cfg.masque_ipv6 || cfg.wireguard_ipv6,
-		mtu: strToInt(cfg.masque_mtu ?? cfg.wireguard_mtu) || null,
-		"remote-dns-resolve": strToBool(cfg.masque_remote_dns_resolve ?? cfg.wireguard_remote_dns_resolve),
-		dns: cfg.masque_dns || cfg.wireguard_dns,
+		network: cfg.zerotier_network_id || cfg.masque_network || null,
+		"state-dir": `${HM_DIR}/${ucinode}/${cfg['.name']}`,
 
 		/* Shadowsocks */
 
@@ -619,14 +629,50 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"health-check": cfg.type === 'trusttunnel' ? (cfg.trusttunnel_health_check === '0' ? false : true) : null,
 		quic: strToBool(cfg.trusttunnel_quic),
 
+		/* ZeroTier */
+		"primary-port": strToInt(cfg.zerotier_primary_port),
+		"secondary-port": strToInt(cfg.zerotier_secondary_port),
+		"physical-mtu": strToInt(cfg.zerotier_physical_mtu) || null,
+		"tcp-fallback-mode": cfg.zerotier_fallback_mode,
+		"tcp-fallback-relay": cfg.zerotier_fallback_relay,
+		"remote-trace-target": cfg.zerotier_trace_target,
+		"remote-trace-level": strToInt(cfg.zerotier_trace_level),
+		"low-bandwidth": strToBool(cfg.zerotier_low_bandwidth),
+		"encrypted-hello": strToBool(cfg.zerotier_encrypted_hello),
+		//planet: `${HM_DIR}/${ucinode}/${cfg['.name']}/planet`,
+		...(isEmpty(cfg.zerotier_orbit) ? {} : {
+			orbit: map([0], () => {
+				const orbits = [];
+				for (let orbit in cfg.zerotier_orbit) {
+					orbit = split(orbit, ':');
+					const world = shift(orbit);
+					for (let seed in orbit)
+						push(orbits, {world: world, seed: seed});
+				}
+				return orbits;
+			})[0]
+		}),
+		"ip-stack": cfg.zerotier_ipstack ? {
+			mode: cfg.zerotier_ipstack,
+			"congestion-controller": replace(cfg.congestion_controller, 'new_reno', 'reno')
+		} : null,
+
 		/* WireGuard */
 		"pre-shared-key": cfg.wireguard_pre_shared_key,
 		"allowed-ips": cfg.wireguard_allowed_ips,
 		reserved: cfg.wireguard_reserved,
 		"persistent-keepalive": strToInt(cfg.wireguard_persistent_keepalive),
 
+		/* Tailscale */
+		hostname: cfg.tailscale_hostname,
+		"auth-key": cfg.tailscale_auth_key,
+		"control-url": cfg.tailscale_control_url,
+		ephemeral: strToBool(cfg.tailscale_ephemeral),
+		"accept-routes": strToBool(cfg.tailscale_accept_routes),
+		"exit-node": cfg.tailscale_exit_node,
+		"exit-node-allow-lan-access": strToBool(cfg.tailscale_exit_node_allow_lan_access),
+
 		/* Masque */
-		network: cfg.masque_network || null,
 
 		/* SSH */
 		"private-key-passphrase": cfg.ssh_priv_key_passphrase,
@@ -637,7 +683,7 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"udp-over-stream": strToBool(cfg.shadowquic_udp_over_stream || cfg.tuic_udp_over_stream),
 		"heartbeat-interval": strToInt(cfg.tuic_heartbeat) || null,
 		"keep-alive-interval": strToInt(cfg.shadowquic_heartbeat) || null,
-		"congestion-controller": cfg.congestion_controller,
+		"congestion-controller": cfg.type in ['zerotier'] ? null : cfg.congestion_controller,
 		"bbr-profile": cfg.bbr_profile,
 		"max-open-streams": strToInt(cfg.max_open_streams) || null,
 
@@ -708,6 +754,13 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 			"short-id": cfg.tls_reality_short_id,
 			"support-x25519mlkem768": strToBool(cfg.tls_reality_support_x25519mlkem768)
 		} : null,
+
+		/* VPN fields */
+		ip: cfg.endpoint_ip,
+		ipv6: cfg.endpoint_ipv6,
+		mtu: strToInt(cfg.endpoint_mtu) || null,
+		"remote-dns-resolve": strToBool(cfg.endpoint_remote_dns_resolve),
+		dns: cfg.endpoint_dns, // Array
 
 		/* Transport fields */
 		// https://github.com/muink/mihomo/blob/3e966e82c793ca99e3badc84bf3f2907b100edae/adapter/outbound/vmess.go#L74

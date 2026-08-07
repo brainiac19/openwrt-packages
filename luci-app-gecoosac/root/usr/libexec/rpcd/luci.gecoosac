@@ -80,51 +80,160 @@ path_in_dir() {
 	[ "${path#"$root"/}" != "$path" ]
 }
 
+is_secure_dir() {
+	local allow_sticky="$2" owner permissions metadata
+
+	[ -d "$1" ] && [ ! -L "$1" ] || return 1
+	metadata="$(ls -ldn "$1" 2>/dev/null)" || return 1
+	set -- $metadata
+	permissions="$1"
+	owner="$3"
+	[ "$owner" = "0" ] || return 1
+	case "$permissions" in
+		d?????????) ;;
+		*) return 1 ;;
+	esac
+
+	if [ "$(printf '%s' "$permissions" | cut -c6)" = "w" ] || \
+		[ "$(printf '%s' "$permissions" | cut -c9)" = "w" ]; then
+		[ "$allow_sticky" = "1" ] && [ "$(printf '%s' "$permissions" | cut -c10)" = "t" ] || return 1
+	fi
+}
+
+is_secure_upload_dir() {
+	local path current part rest
+
+	path="$(normalize_path "$1")" || return 1
+	[ -d "$path" ] && [ ! -L "$path" ] || return 1
+	current="/"
+	rest="${path#/}"
+
+	while [ -n "$rest" ]; do
+		part="${rest%%/*}"
+		if [ "$part" = "$rest" ]; then
+			rest=""
+		else
+			rest="${rest#*/}"
+		fi
+		current="${current%/}/$part"
+		case "$current" in
+			/tmp) is_secure_dir "$current" 1 || return 1 ;;
+			*) is_secure_dir "$current" || return 1 ;;
+		esac
+	done
+}
+
 configured_path_in_upload() {
 	local option="$1"
-	local upload_path="$2"
-	local path real_path
+	local upload_path="$2" path real_path
 
 	path="$(uci -q get "gecoosac.config.${option}")"
 	[ -n "$path" ] || return 1
 
-	case "$path" in
-		/*) ;;
-		*) return 1 ;;
-	esac
+	path="$(normalize_path "$path")" || return 2
+	path_in_dir "$path" "$upload_path" && return 0
+	[ -e "$path" ] || [ -L "$path" ] || return 1
 
-	real_path="$(readlink -f "$path" 2>/dev/null)"
-	[ -n "$real_path" ] || real_path="$(normalize_path "$path")" || return 1
+	real_path="$(readlink -f "$path" 2>/dev/null)" || return 2
+	[ -n "$real_path" ] || return 2
+	real_path="$(normalize_path "$real_path")" || return 2
 
 	path_in_dir "$real_path" "$upload_path"
+}
+
+status_result() {
+	local ok="$1" running="$2" message="$3"
+
+	json_init
+	json_add_boolean ok "$ok"
+	json_add_boolean running "$running"
+	[ -n "$message" ] && json_add_string error "$message"
+	json_dump
+	json_cleanup
 }
 
 service_status() {
 	local data instances instance running state
 
 	running=0
-	data="$(ubus call service list '{"name":"gecoosac"}' 2>/dev/null)"
-	if json_load "$data" 2>/dev/null && json_select gecoosac 2>/dev/null && json_select instances 2>/dev/null; then
-		json_get_keys instances
-		for instance in $instances; do
-			json_select "$instance" 2>/dev/null || continue
-			json_get_var state running
-			json_select ..
-			if [ "$state" = "1" ]; then
-				running=1
-				break
-			fi
-		done
+	data="$(ubus call service list '{"name":"gecoosac"}' 2>/dev/null)" || {
+		status_result 0 0 "Unable to query service status"
+		return
+	}
+	json_load "$data" 2>/dev/null || {
+		status_result 0 0 "Invalid service status response"
+		return
+	}
+
+	if json_select gecoosac 2>/dev/null; then
+		if json_select instances 2>/dev/null; then
+			json_get_keys instances
+			for instance in $instances; do
+				json_select "$instance" 2>/dev/null || continue
+				json_get_var state running
+				json_select ..
+				if [ "$state" = "1" ]; then
+					running=1
+					break
+				fi
+			done
+		fi
 	fi
 
-	json_init
-	json_add_boolean running "$running"
-	json_dump
 	json_cleanup
+	status_result 1 "$running"
+}
+
+clear_upload_unlock() {
+	flock -u 9 >/dev/null 2>&1
+	exec 9<&-
+}
+
+clear_upload_locked_result() {
+	clear_upload_unlock
+	json_result "$1" "$2" "$3"
+}
+
+is_safe_clear_stage() {
+	local stage="$1"
+
+	[ -d "$stage" ] && [ ! -L "$stage" ] || return 1
+	is_secure_dir "$stage" || return 1
+	if [ -e "$stage/upload" ] || [ -L "$stage/upload" ]; then
+		[ -d "$stage/upload" ] && [ ! -L "$stage/upload" ] || return 1
+		is_secure_upload_dir "$stage/upload" || return 1
+	fi
+}
+
+ensure_live_upload_dir() {
+	local path="$1"
+
+	if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+		mkdir "$path" 2>/dev/null || {
+			[ -d "$path" ] && [ ! -L "$path" ] || return 1
+		}
+	fi
+	[ -d "$path" ] && [ ! -L "$path" ] || return 1
+	chmod 0750 "$path" || return 1
+	is_secure_upload_dir "$path"
+}
+
+validate_clear_protected_paths() {
+	local root="$1" option
+
+	for option in db_dir piddir crt_file key_file; do
+		configured_path_in_upload "$option" "$root"
+		case "$?" in
+			0) return 0 ;;
+			1) ;;
+			*) return 2 ;;
+		esac
+	done
+	return 1
 }
 
 clear_upload() {
-	local path real entry
+	local path real parent stage option candidate stages live_exists
 
 	path="$(uci -q get gecoosac.config.upload_dir)"
 	[ -n "$path" ] || path="$DEFAULT_UPLOAD_DIR"
@@ -134,33 +243,138 @@ clear_upload() {
 		*) json_result 0 "Expecting an absolute path"; return ;;
 	esac
 
-	path="$(normalize_path "$path")"
-	real="$(readlink -f "$path" 2>/dev/null)"
-	[ -n "$real" ] || real="$path"
+	path="$(normalize_path "$path")" || { json_result 0 "Expecting an absolute path"; return; }
+	if ! safe_upload_path "$path"; then
+		json_result 0 "Only Gecoos upload directories can be cleared" "$path"
+		return
+	fi
+
+	parent="${path%/*}"
+	if [ ! -e "$parent" ] && [ ! -L "$parent" ]; then
+		json_result 1 "" "$path"
+		return
+	fi
+	if ! is_secure_upload_dir "$parent"; then
+		json_result 0 "Upload directory or its parent is not root-owned and private" "$path"
+		return
+	fi
+
+	if [ -e "$path" ] || [ -L "$path" ]; then
+		real="$(readlink -f "$path" 2>/dev/null)"
+	else
+		real="$path"
+	fi
+	[ -n "$real" ] || { json_result 0 "Unable to resolve upload directory" "$path"; return; }
 	real="$(normalize_path "$real")" || { json_result 0 "Expecting an absolute path"; return; }
+	[ "$real" = "$path" ] || { json_result 0 "Only Gecoos upload directories can be cleared" "$real"; return; }
 
-	if ! safe_upload_path "$real"; then
-		json_result 0 "Only Gecoos upload directories can be cleared" "$real"
+	exec 9<"$parent" 2>/dev/null || {
+		json_result 0 "Unable to prepare upload directory cleanup" "$real"
+		return
+	}
+	if ! flock -n 9 >/dev/null 2>&1; then
+		clear_upload_unlock
+		json_result 0 "Unable to prepare upload directory cleanup" "$real"
 		return
 	fi
 
-	if configured_path_in_upload db_dir "$real" || configured_path_in_upload piddir "$real"; then
-		json_result 0 "Upload directory contains configured runtime paths" "$real"
+	if ! is_secure_upload_dir "$parent"; then
+		clear_upload_locked_result 0 "Upload directory or its parent is not root-owned and private" "$real"
 		return
 	fi
-
-	[ -d "$real" ] || { json_result 1 "" "$real"; return; }
-
-	for entry in "$real"/* "$real"/.[!.]* "$real"/..?*; do
-		[ -e "$entry" ] || [ -L "$entry" ] || continue
-
-		if ! rm -rf "$entry"; then
-			json_result 0 "Unable to remove upload directory contents" "$real"
+	parent="${real%/*}"
+	stages=0
+	for candidate in "$parent"/.gecoosac-clear.??????; do
+		[ "$candidate" != "$parent/.gecoosac-clear.??????" ] || continue
+		stages=1
+		is_safe_clear_stage "$candidate" || {
+			clear_upload_locked_result 0 "Unable to validate upload cleanup stage" "$candidate"
 			return
+		}
+		if [ -e "$candidate/upload" ] || [ -L "$candidate/upload" ]; then
+			validate_clear_protected_paths "$candidate/upload"
+			case "$?" in
+				0) clear_upload_locked_result 0 "Upload cleanup stage contains a configured protected path" "$candidate"; return ;;
+				1) ;;
+				*) clear_upload_locked_result 0 "Unable to validate configured paths" "$candidate"; return ;;
+			esac
 		fi
 	done
 
-	json_result 1 "" "$real"
+	live_exists=0
+	[ -e "$real" ] || [ -L "$real" ] && live_exists=1
+	if [ "$live_exists" = "1" ] && ! is_secure_upload_dir "$real"; then
+		clear_upload_locked_result 0 "Upload directory or its parent is not root-owned and private" "$real"
+		return
+	fi
+	if [ "$live_exists" = "0" ] && [ "$stages" = "0" ]; then
+		clear_upload_locked_result 1 "" "$real"
+		return
+	fi
+	if [ "$live_exists" = "1" ]; then
+		validate_clear_protected_paths "$real"
+		case "$?" in
+			0) clear_upload_locked_result 0 "Upload directory contains a configured protected path" "$real"; return ;;
+			1) ;;
+			*) clear_upload_locked_result 0 "Unable to validate configured paths" "$real"; return ;;
+		esac
+	fi
+	if [ "$live_exists" = "0" ]; then
+		ensure_live_upload_dir "$real" || {
+			clear_upload_locked_result 0 "Unable to recreate upload directory" "$real"
+			return
+		}
+	fi
+
+	for candidate in "$parent"/.gecoosac-clear.??????; do
+		[ "$candidate" != "$parent/.gecoosac-clear.??????" ] || continue
+		if [ -e "$candidate/upload" ] || [ -L "$candidate/upload" ]; then
+			rm -rf "$candidate/upload" || {
+				logger -t gecoosac "upload cleanup retained staged data at $candidate"
+				clear_upload_locked_result 0 "Unable to remove upload directory contents" "$real"
+				return
+			}
+		fi
+		rmdir "$candidate" || {
+			clear_upload_locked_result 0 "Unable to remove upload cleanup stage" "$candidate"
+			return
+		}
+	done
+
+	if [ "$live_exists" = "1" ]; then
+		stage="$(mktemp -d "$parent/.gecoosac-clear.XXXXXX" 2>/dev/null)" || {
+			clear_upload_locked_result 0 "Unable to prepare upload directory cleanup" "$real"
+			return
+		}
+		if ! chmod 0700 "$stage" || ! mv "$real" "$stage/upload"; then
+			rm -rf "$stage"
+			clear_upload_locked_result 0 "Unable to prepare upload directory cleanup" "$real"
+			return
+		fi
+		if ! ensure_live_upload_dir "$real"; then
+			if [ ! -e "$real" ] && [ ! -L "$real" ]; then
+				mv "$stage/upload" "$real" 2>/dev/null
+			fi
+			clear_upload_locked_result 0 "Unable to recreate upload directory" "$real"
+			return
+		fi
+	else
+		stage=
+	fi
+
+	if [ "$live_exists" = "1" ]; then
+		if ! rm -rf "$stage/upload"; then
+			logger -t gecoosac "upload cleanup retained staged data at $stage"
+			clear_upload_locked_result 0 "Unable to remove upload directory contents" "$real"
+			return
+		fi
+		rmdir "$stage" || {
+			clear_upload_locked_result 0 "Unable to remove upload cleanup stage" "$stage"
+			return
+		}
+	fi
+
+	clear_upload_locked_result 1 "" "$real"
 }
 
 case "$1" in

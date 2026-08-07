@@ -20,7 +20,8 @@ let statusPollRegistered = false;
 const callServiceStatus = rpc.declare({
 	object: 'luci.gecoosac',
 	method: 'status',
-	expect: { '': {} }
+	expect: { '': {} },
+	reject: true
 });
 
 const callClearUpload = rpc.declare({
@@ -32,6 +33,50 @@ const callClearUpload = rpc.declare({
 function validPort(value, defaultValue) {
 	const port = Number(value || defaultValue);
 	return Number.isInteger(port) && port >= 1 && port <= 65535 ? String(port) : defaultValue;
+}
+
+function validPortValue(value) {
+	const text = String(value || '');
+	const port = Number(text);
+
+	return /^[0-9]+$/.test(text) && Number.isSafeInteger(port) && port >= 1 && port <= 65535;
+}
+
+
+function validatePortValue(section_id, value, otherOption, singlePortOption, activeInSinglePort) {
+	const singlePort = singlePortOption.formvalue(section_id);
+
+	if (!activeInSinglePort && singlePort !== '0')
+		return true;
+
+	if (!validPortValue(value))
+		return _('Port must be an integer between 1 and 65535.');
+
+	const otherValue = otherOption.formvalue(section_id);
+
+	if (singlePort === '0' && validPortValue(otherValue) && Number(value) === Number(otherValue))
+		return _('Interface port and management port must be different.');
+
+	return true;
+}
+
+function validateCertificatePath(section_id, value, singlePortOption, httpsOption) {
+	if (singlePortOption.formvalue(section_id) !== '0' || httpsOption.formvalue(section_id) !== '1' || !value)
+		return true;
+
+	return String(value).charAt(0) === '/' ? true : _('Expecting an absolute path');
+}
+
+function triggerActiveValidation(section_id, options) {
+	for (const option of options) {
+		if (!option.isActive(section_id))
+			continue;
+
+		const element = option.getUIElement(section_id);
+
+		if (element)
+			element.triggerValidation();
+	}
 }
 
 function normalizePath(value) {
@@ -99,6 +144,9 @@ function serviceRunning(status) {
 	const service = status && status.gecoosac;
 	const instances = service && service.instances;
 
+	if (status && status.ok === false)
+		return false;
+
 	if (status && status.running === true)
 		return true;
 
@@ -110,6 +158,13 @@ function serviceRunning(status) {
 			return true;
 
 	return false;
+}
+
+function statusFailure() {
+	return {
+		ok: false,
+		error: _('Unable to query service status')
+	};
 }
 
 function clientHost() {
@@ -132,6 +187,9 @@ function clientUrl() {
 }
 
 function renderStatusContent(status) {
+	if (status && status.error)
+		return E('p', { 'class': 'gecoosac-stopped' }, _('Service status unavailable') + ': ' + _(status.error));
+
 	const running = serviceRunning(status);
 	const text = running
 		? _('The GecoosAC service is running.')
@@ -174,12 +232,16 @@ return view.extend({
 	load() {
 		return Promise.all([
 			uci.load('gecoosac'),
-			L.resolveDefault(callServiceStatus(), {})
+			callServiceStatus().catch(function() {
+				return statusFailure();
+			})
 		]);
 	},
 
 	render(data) {
 		let m, s, o, uploadDirOption;
+		let portOption, managementPortOption, singlePortOption;
+		let httpsOption, certificateOption, keyOption;
 
 		m = new form.Map('gecoosac', _('Gecoos AC'),
 			_('Only supports Gecoos AP firmware 7.6 and above.') + '<br />' +
@@ -190,7 +252,9 @@ return view.extend({
 		s.render = function() {
 			if (!statusPollRegistered) {
 				poll.add(function() {
-					return L.resolveDefault(callServiceStatus(), {}).then(updateStatus);
+					return callServiceStatus().then(updateStatus).catch(function() {
+						updateStatus(statusFailure());
+					});
 				}, 3);
 				statusPollRegistered = true;
 			}
@@ -212,39 +276,83 @@ return view.extend({
 		o = s.option(form.Flag, 'enabled', _('Enabled AC'));
 		o.rmempty = false;
 
-		o = s.option(form.Value, 'port', _('Set interface port'));
+		portOption = s.option(form.Value, 'port', _('Set interface port'));
+		o = portOption;
 		o.placeholder = '60650';
 		o.default = '60650';
 		o.datatype = 'port';
 		o.rmempty = false;
 
-		o = s.option(form.Flag, 'isonlyoneprot', _('Single Port Mode'),
+		singlePortOption = s.option(form.Flag, 'isonlyoneprot', _('Single Port Mode'),
 			_('Do not enable the independent management port, only use one port for management.'));
+		o = singlePortOption;
 		o.default = '1';
 		o.rmempty = false;
 
-		o = s.option(form.Value, 'm_port', _('Set management port'));
+		managementPortOption = s.option(form.Value, 'm_port', _('Set management port'));
+		o = managementPortOption;
 		o.placeholder = '8080';
 		o.default = '8080';
 		o.datatype = 'port';
 		o.depends('isonlyoneprot', '0');
 
-		o = s.option(form.Flag, 'https', _('Enable HTTPS service'),
+		portOption.validate = function(section_id, value) {
+			return validatePortValue(section_id, value, managementPortOption, singlePortOption, true);
+		};
+		managementPortOption.validate = function(section_id, value) {
+			return validatePortValue(section_id, value, portOption, singlePortOption, false);
+		};
+		singlePortOption.validate = function(section_id, value) {
+			if (value === '0') {
+				const port = portOption.formvalue(section_id);
+				const managementPort = managementPortOption.formvalue(section_id);
+
+				if (validPortValue(port) && validPortValue(managementPort) && Number(port) === Number(managementPort))
+					return _('Interface port and management port must be different.');
+			}
+
+			return true;
+		};
+		httpsOption = s.option(form.Flag, 'https', _('Enable HTTPS service'),
 			_('Default certificate files are generated when HTTPS starts; custom paths must point to a readable certificate and matching key.'));
+		o = httpsOption;
 		o.default = '0';
 		o.depends('isonlyoneprot', '0');
 
-		o = s.option(form.Value, 'crt_file', _('Specify crt certificate file'));
+		certificateOption = s.option(form.Value, 'crt_file', _('Specify crt certificate file'));
+		o = certificateOption;
 		o.placeholder = DEFAULT_CRT_FILE;
 		o.default = DEFAULT_CRT_FILE;
 		o.datatype = 'file';
 		o.depends({ isonlyoneprot: '0', https: '1' });
+		o.validate = function(section_id, value) {
+			return validateCertificatePath(section_id, value, singlePortOption, httpsOption);
+		};
 
-		o = s.option(form.Value, 'key_file', _('Specify key certificate file'));
+		keyOption = s.option(form.Value, 'key_file', _('Specify key certificate file'));
+		o = keyOption;
 		o.placeholder = DEFAULT_KEY_FILE;
 		o.default = DEFAULT_KEY_FILE;
 		o.datatype = 'file';
 		o.depends({ isonlyoneprot: '0', https: '1' });
+		o.validate = function(section_id, value) {
+			return validateCertificatePath(section_id, value, singlePortOption, httpsOption);
+		};
+
+		const revalidateProtocolOptions = function(_event, section_id) {
+			triggerActiveValidation(section_id, [
+				portOption,
+				managementPortOption,
+				singlePortOption,
+				httpsOption,
+				certificateOption,
+				keyOption
+			]);
+		};
+		portOption.onchange = revalidateProtocolOptions;
+		managementPortOption.onchange = revalidateProtocolOptions;
+		singlePortOption.onchange = revalidateProtocolOptions;
+		httpsOption.onchange = revalidateProtocolOptions;
 
 		o = s.option(form.Value, 'upload_dir', _('Upload dir path'),
 			_('Upload AP upgrade firmware here. Use an absolute path ending with /gecoosac/upload, for example /tmp/gecoosac/upload.<br />Do not place it under /etc/gecoosac because that directory is backed up during sysupgrade.'));
@@ -320,11 +428,11 @@ return view.extend({
 			if (!confirm(_('Really clear the saved upload directory?')))
 				return Promise.resolve();
 
-			return callClearUpload().then(function(res) {
-				if (res && res.result === true)
+			return callClearUpload().then(function() {
+				if (arguments[0] && arguments[0].result === true)
 					ui.addNotification(null, E('p', {}, _('Saved upload directory cleared')));
 				else
-					ui.addNotification(null, E('p', {}, clearUploadError(res)), 'danger');
+					ui.addNotification(null, E('p', {}, clearUploadError(arguments[0])), 'danger');
 			});
 		};
 

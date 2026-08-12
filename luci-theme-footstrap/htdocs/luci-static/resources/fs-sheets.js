@@ -307,6 +307,52 @@ function judgeSheet(el, universe) {
  * <link> INSIDE the view tree (`luci-app-nlbwmon`) needs no handling: it dies with the swap. */
 const VIEW_SHEETS = 'style:not([data-fs-shell]), link[rel~="stylesheet"]:not([data-fs-shell])';
 
+/* DOES THIS SHEET OUTLIVE THE PAGE IT ARRIVED WITH? Everything this module decides hangs off that
+ * one question, and the answer is where the element sits: a <style>/<link> inside the view tree
+ * dies with the swap (dom.content() replaces #view's children), so it can neither poison the next
+ * page, nor need scoping to this one, nor be a duplicate worth removing. Only sheets outside it
+ * are this module's business. Named because it is asked in four places and read wrong in none of
+ * them only by luck: `!el.closest('#view')` states where an element is, not what follows from it. */
+function outlivesPage(el) {
+	return !el.closest('#view');
+}
+
+/* Is `path` — a menu.d node's `css`, i.e. a path under /luci-static/resources — already carried by
+ * this document in a form that SURVIVES a swap?
+ *
+ * The router asks before committing a client navigation: only a server render emits that <link>, so
+ * a page whose stylesheet is missing must arrive by full load (see fs-router.js). The question is
+ * this module's because the answer is: a link inside #view is about to be deleted with the rest of
+ * the view, and counting it would hand the router a sheet the next dom.content() throws away —
+ * `luci-app-nlbwmon` returns E('link', …, L.resource('view/nlbw.css')) from render(), so that shape
+ * is real.
+ *
+ * WHOLE PATH, NOT A SUFFIX. head.ut prints `{{ resource }}/{{ dispatched.css }}?v=…`, and the base in
+ * that line is the SAME value the runtime holds: header.ut hands `resource` to `new LuCI({…})`, and
+ * `L.resource()` joins it back exactly, so the server's href is reconstructable rather than guessable
+ * — only the cache key has to come off. A suffix match is what a guess costs: anchored at nothing but
+ * a `/`, `custom.css` matches any sheet ending in that filename, and two in-tree apps append exactly
+ * that to <head> at module eval — `luci-app-adblock` and `luci-app-banip` both add
+ * `L.resource('view/<app>/custom.css')`, outside #view, so outlivesPage() keeps them and this module
+ * disables rather than removes them: they stay for the life of the document. A third-party node
+ * declaring `"css": "custom.css"` would then read as already-carried the moment the user had passed
+ * through Adblock → Feeds, and the router would swap into a page whose stylesheet was never linked —
+ * the one outcome the guard exists to prevent.
+ *
+ * Equality also keeps the failure safe: L.path() drops a part that leaves its charset, so a malformed
+ * `css` yields the bare base and matches no href at all — a full load, which is the correct answer for
+ * a value nobody can serve. */
+function documentCarries(path) {
+	const want = L.resource(String(path));
+	for (const link of document.querySelectorAll('link[rel~="stylesheet"][href]')) {
+		if (!outlivesPage(link))
+			continue;
+		if ((link.getAttribute('href') || '').split('?')[0] === want)
+			return true;
+	}
+	return false;
+}
+
 /* An invasive sheet we OWN is contained — scopeToCurrentPage() darkens it the moment the router
  * stamps the new page, so it cannot reach the next page and the document is not spent. One we could
  * not attribute (not re-hostable, so never owned: an @import at the top, a sheet built with
@@ -331,7 +377,7 @@ function documentPoisoned() {
 	const names = themeNames();
 	return Array.prototype.some.call(
 		document.querySelectorAll(VIEW_SHEETS),
-		(el) => !el.closest('#view')
+		(el) => outlivesPage(el)
 			&& (!names || (invasiveSheet(el, names) && !_owner.has(el) && !_silenced.has(el))));
 }
 
@@ -623,7 +669,7 @@ function scopeToCurrentPage(segs) {
 	if (segs) _curKey = appKey(segs);
 	const key = currentKey();
 	document.querySelectorAll(VIEW_SHEETS).forEach((el) => {
-		if (el.closest('#view') || !_owner.has(el)) return;
+		if (!outlivesPage(el) || !_owner.has(el)) return;
 		setEnabled(el, _owner.get(el) === key);
 	});
 }
@@ -731,7 +777,7 @@ function sheetKey(el) {
 function dedupeViewSheets() {
 	const seen = new Set();
 	document.querySelectorAll(VIEW_SHEETS).forEach((el) => {
-		if (el.closest('#view')) return;
+		if (!outlivesPage(el)) return;
 		const key = sheetKey(el);
 		if (key === null) return;
 		if (seen.has(key)) el.remove();
@@ -841,6 +887,7 @@ function watchViewSheets() {
 }
 
 return baseclass.extend({
+	documentCarries,
 	documentPoisoned,
 	scopeToCurrentPage,
 	watchViewSheets

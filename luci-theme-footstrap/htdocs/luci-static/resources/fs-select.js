@@ -185,8 +185,21 @@ function enhance(sel) {
  * openclash / justclash / ssclash / dashboard / statistics included, found ZERO. That is the point:
  * every table anyone here emits already carries the class, so this changes nothing that can be
  * measured and covers the one shape that cannot be (docs/conventions.md: coverage is a contract). */
-const FOREIGN_TABLE = '#view .table:not(.cbi-section-table):not(.fs-dt), ' +
-	'#view table:not(.table):not(.cbi-section-table):not(.fs-dt)';
+/* NO `:not(.fs-dt)`, and that is the difference between claiming a table once and KEEPING it. These
+ * tables are polled: L.ui.Table.update() and every hand-rolled equivalent replace the rows inside
+ * the element they already have. Excluding what we tagged meant the claim ran exactly once per
+ * element — the rows present at that moment were adopted and captioned, and every batch after it
+ * kept neither `.tr`/`.td` nor `data-title`, on a table that by then may carry `.fs-stacked`, where
+ * `#view .table.fs-dt.fs-stacked { overflow: hidden }` clips the lot with no scrollbar. That is the
+ * exact failure adoptMarkup() was written to prevent, arriving one poll later. LuCI's own tables
+ * were never exposed to it (ui.Table writes those class names and the caption itself), so this is
+ * third-party-only — which is the zone this whole selector exists for.
+ *
+ * Re-running is what the two functions below are already written for: both are additive, both skip
+ * what is already done, and neither re-decides anything (adoptMarkup() settles the "is this ours to
+ * rewrite?" question once, at claim time, and remembers the answer on the element). */
+const FOREIGN_TABLE = '#view .table:not(.cbi-section-table), ' +
+	'#view table:not(.table):not(.cbi-section-table)';
 
 /* The FOURTH header markup, and the one only a foreign table produces: `<table><tr><th>…`, with no
  * `<thead>` for the parser to imply and none of LuCI's class names. It is the exact shape the phone
@@ -255,9 +268,10 @@ function tagDataTables() {
  * names: a `<thead>` becomes `.thead` and a plain first row of `<th>` becomes `.tr.table-titles` —
  * the two names theme/30-tables.css hides when stacked. */
 function adoptMarkup(t, head) {
-	/* DECIDED ONCE, AT CLAIM TIME, and only for a table that speaks none of this vocabulary. Asking
-	 * the question every pass instead would answer "already adopted" the moment we adopted it — and
-	 * these tables are polled, so the fresh rows that arrive bare afterwards would never be taken.
+	/* DECIDED ONCE, AT CLAIM TIME, and only for a table that speaks none of this vocabulary — then
+	 * READ on every pass, because the caller now revisits a table it has already claimed (see
+	 * FOREIGN_TABLE). Asking the question afresh each pass instead would answer "already adopted"
+	 * the moment we adopted it, and the fresh rows a poll brings in bare would never be taken.
 	 * Asking it at all is what keeps the theme's hands off LuCI's own markup: the apk Software list
 	 * heads its table with `.tr.cbi-section-table-titles`, and blindly adding `table-titles` to that
 	 * would be the theme rewriting a class LuCI chose. */
@@ -287,11 +301,13 @@ function adoptMarkup(t, head) {
  *
  * The heading is COPIED, not invented: it is the text of the header cell in the same position, so
  * the card says exactly what the column header says. Never overwrites an existing data-title — if
- * the app set one, that is the app's answer and it knows more than a positional guess. Cheap enough
- * to re-run on every fit pass (it is skipped entirely once the cells carry the attribute), which
- * matters because these tables are POLLED: the rows are replaced wholesale every few seconds, and
- * the fresh ones arrive without it. */
+ * the app set one, that is the app's answer and it knows more than a positional guess. Re-run on
+ * every fit pass, because these tables are POLLED: the rows are replaced wholesale every few
+ * seconds and the fresh ones arrive without the attribute. What keeps that affordable is the
+ * PER-ROW skip below: a captioned row is recognised from one cell instead of all of them, so a
+ * table LuCI captioned itself costs one attribute test per row and nothing else. */
 function labelCells(t, head) {
+	const rows = t.querySelectorAll('.tr, tbody tr');
 	/* A `<thead>` that was WRITTEN as markup nests a real `<tr>` — the parser inserts one even where
 	 * the author left it out — while one built by E() holds the `<th>`s directly (see above). Reading
 	 * `head.children` blind therefore captioned every cell of a parsed table with the header row's
@@ -301,9 +317,30 @@ function labelCells(t, head) {
 	const titleRow = (head.firstElementChild && head.firstElementChild.tagName === 'TR') ? head.firstElementChild : head;
 	const titles = [ ...titleRow.children ].map((c) => (c.textContent || '').trim());
 	if (!titles.some(Boolean)) return;
-	for (const row of t.querySelectorAll('.tr, tbody tr')) {
+	for (const row of rows) {
 		if (row === head) continue;
 		const cells = row.children;
+		/* ---- SKIP A ROW THAT IS ALREADY CAPTIONED, ASKED OF THE ROW AND OF NOTHING ELSE ----
+		 *
+		 * A claimed table is revisited on every fit pass — a MUTATION pass, not a once-a-second one —
+		 * so the common case has to be answered cheaply: everything LuCI renders is captioned by
+		 * `ui.Table` as it builds it, and the walk could never find work there. Testing the row's FIRST
+		 * cell answers that in one attribute read instead of one per cell.
+		 *
+		 * The row, rather than the table, is what carries the answer, and that is the whole point: a
+		 * poll appends or replaces rows one at a time, and a table can hold captioned and bare rows at
+		 * once. A table-level probe has to guess WHICH row speaks for the rest, and every choice is
+		 * wrong for some shape — asking the last row stalls forever on a `<tfoot>` of per-column
+		 * totals, which is captioned once and then never bare again while fresh rows keep arriving in
+		 * the `<tbody>` above it (`t.rows` spans thead, tbody and tfoot, and the query above is in
+		 * document order). Asked per row, there is nothing to guess: a fresh row has no caption and is
+		 * walked, a captioned one is skipped, and cells replaced INSIDE a surviving row arrive bare and
+		 * are walked too.
+		 *
+		 * A first cell that can never take a caption — one that spans columns, or whose header text is
+		 * empty — leaves its row walked on every pass. That is the safe direction and it is bounded by
+		 * the row, not the table: the walk is idempotent and writes nothing it has not been asked to. */
+		if (cells.length && cells[0].hasAttribute('data-title')) continue;
 		/* COLUMN cursor, not the cell index: a cell that spans N columns occupies N of the header's
 		 * slots while advancing the cell index by one, so keying titles off `i` captioned every cell
 		 * AFTER a spanning one with the heading of the column to its left — "Hostname" over an IP

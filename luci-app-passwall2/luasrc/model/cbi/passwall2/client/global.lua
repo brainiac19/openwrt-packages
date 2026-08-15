@@ -234,6 +234,12 @@ o:value("UseIP")
 o:value("UseIPv4")
 o:value("UseIPv6")
 
+if current_node.type == "sing-box" then
+	o = s:taboption("DNS", Value, "remote_rewrite_ttl", translate("Remote DNS") .. " TTL")
+	o.datatype = "min(1)"
+	o.default = "30"
+end
+
 o = s:taboption("DNS", TextValue, "dns_hosts", translate("Domain Override"))
 o.rows = 5
 o.wrap = "off"
@@ -376,5 +382,6 @@ for k, v in pairs(nodes_table) do
 end
 
 m:appendTemplate("/global/footer", {shunt_list = api.jsonc.stringify(shunt_list)})
+m:appendTemplate(Template("/global/status_bottom"))
 
 return api.return_map(m)

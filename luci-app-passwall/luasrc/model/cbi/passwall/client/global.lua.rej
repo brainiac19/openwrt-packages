@@ -1,9 +1,0 @@
---- luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua
-+++ luci-app-passwall/luasrc/model/cbi/passwall/client/global.lua
-@@ -874,5 +895,6 @@
- end
- 
- m:appendTemplate("/global/footer", {shunt_list = api.jsonc.stringify(shunt_list)})
-+m:appendTemplate("/global/status_bottom")
- 
- return api.return_map(m)

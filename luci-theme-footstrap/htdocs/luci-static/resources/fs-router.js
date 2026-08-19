@@ -37,78 +37,122 @@ const _viewIntervals = (window.__fsViewIntervals || (window.__fsViewIntervals = 
 	if (window.__fsIntervalsHooked) return;
 	window.__fsIntervalsHooked = true;
 	const _si = window.setInterval, _ci = window.clearInterval;
+	/* THE ID THE CALLER GOT IS THE ID IT KEEPS, whatever the pause below does underneath. The map is
+	 * keyed by that first id and the entry carries `live`, the id the platform has armed RIGHT NOW
+	 * (null while paused) — so a view holding its handle can still stop its own poller after a trip
+	 * through a hidden tab, which is exactly what re-arming under a fresh id took away from it.
+	 * The arguments are kept for the same reason: a `setInterval` id carries none of them back. */
 	window.setInterval = function (fn, ms) {
 		const id = _si.apply(window, arguments);
-		/* the arguments are kept, not just the id: a paused timer has to be re-armed with what it
-		 * was armed with, and a `setInterval` id carries none of that back */
-		_viewIntervals.set(id, { fn, ms, rest: Array.prototype.slice.call(arguments, 2) });
+		_viewIntervals.set(id, { fn, ms, rest: Array.prototype.slice.call(arguments, 2), live: id });
 		return id;
 	};
 	window.clearInterval = function (id) {
+		const spec = _viewIntervals.get(id);
 		_viewIntervals.delete(id);
+		/* A PAUSED TIMER IS ALREADY DISARMED, and its number is the platform's to hand out again —
+		 * clearing it here would stop whatever timer holds it now. Untracked ids fall through
+		 * unchanged: the hook must stay a pass-through for everything it did not arm. */
+		if (spec) return (spec.live == null) ? undefined : _ci.call(window, spec.live);
 		return _ci.apply(window, arguments);
 	};
 	/* A HIDDEN TAB MUST NOT KEEP CALLING THE ROUTER. `wireVisibility()` below stops LuCI's own poll
 	 * when the tab goes away, which is most of the traffic — but a view is free to run a plain
 	 * `setInterval` of its own (luci-app-podkop's log tailer does), and those kept hammering ubus in
 	 * a background tab for as long as it stayed open. The registry that navigation already uses to
-	 * clear them is enough to pause them too: cleared on hide, re-armed on show with the same
+	 * clear them is enough to pause them too: disarmed on hide, re-armed on show with the same
 	 * callback and period, so a view that was polling every 3 s is polling every 3 s again and one
-	 * that was cleared meanwhile stays cleared. */
-	let _paused = [];
+	 * that was cleared meanwhile stays cleared.
+	 *
+	 * A PAUSED TIMER STAYS IN THE REGISTRY, armed on nothing. It was carried in a private list
+	 * beside it, and a list is not what the navigation sweep reads: hide the tab while a navigation
+	 * is in flight (a click, then straight to another tab), and coming back re-armed the timers of
+	 * the page that navigation had already replaced — the sweep had run while they were somewhere
+	 * it could not see. In the map, `clearViewIntervals()` takes them like any other. */
 	document.addEventListener('visibilitychange', () => {
 		if (document.hidden) {
-			_paused = [];
+			/* LuCI'S OWN TICK IS NOT OURS TO PAUSE, and taking it made the page poll FASTER the
+			 * longer it was left in a background tab. `L.Poll.start()` arms its 1 s tick with a
+			 * plain `setInterval`, so the hook above catches it like any other id. This listener is
+			 * registered at module eval and wireVisibility()'s in init(), so ours ran first: it
+			 * cleared LuCI's tick with the raw `_ci` and dropped it from the map (leaving
+			 * `L.Poll.timer` naming a dead id, which made the `L.Poll.stop()` right after a no-op),
+			 * and on show it re-armed that tick on an id `L.Poll` knew nothing about — after which
+			 * `start()` armed a second one, because `active()` had nothing to see. Two steps per
+			 * second after one hide/show, three after two, and so on for as long as the reader kept
+			 * coming back. Only a client navigation swept the orphans up.
+			 *
+			 * So the tick is skipped here and wireVisibility() keeps both halves of it. When it
+			 * cannot be told apart from a view's timer, NOTHING is paused: a view's poller running
+			 * in a hidden tab costs a wasted RPC, whereas re-arming LuCI's tick behind its back
+			 * costs a doubling that never stops. Same judgement as clearViewIntervals(). */
+			const keep = pollTickId();
+			if (keep === false) return;
 			for (const [ id, spec ] of _viewIntervals) {
-				_paused.push(spec);
-				_ci.call(window, id);
-				_viewIntervals.delete(id);
+				if (id === keep || spec.live == null) continue;
+				_ci.call(window, spec.live);
+				spec.live = null;
 			}
 		}
 		else {
-			const back = _paused;
-			_paused = [];
-			for (const spec of back) window.setInterval(spec.fn, spec.ms, ...spec.rest);
+			for (const spec of _viewIntervals.values()) {
+				if (spec.live != null) continue;
+				/* `_si`, not the hook: this timer is already in the registry under the id its
+				 * caller is holding, and re-registering it would key a second entry to a number
+				 * nobody has. The fresh id lives in `spec.live` alone and is never a KEY, so it
+				 * cannot collide with an entry — and the platform hands ids out in sequence, so a
+				 * re-arm cannot be given a number some earlier caller is still holding either. */
+				spec.live = _si.call(window, spec.fn, spec.ms, ...spec.rest);
+			}
 		}
 	});
 })();
-function clearViewIntervals() {
-	/* `L.Poll.timer` is the id of LuCI's OWN 1 s tick, and it is private state — `add`/`remove`/
-	 * `start`/`stop`/`active` are the documented surface, and upstream has already marked the whole
-	 * `L.Poll` alias deprecated (`'require poll'` is its replacement, and neither 24.10 nor 25.12
-	 * ships poll.js yet, so the alias is still the only way in). If that field ever goes, `keep`
-	 * becomes null and this sweep would clear LuCI's tick along with the view's timers — every poll
-	 * on every later page silently dead, from a rename we did not notice. So the missing field is
-	 * not a null: it is a reason to do NOTHING, once, loudly. A view's leftover interval outliving
-	 * its page costs a wasted RPC; killing the global tick costs the router's live data. */
-	/* Asked through the DOCUMENTED half first: active() says whether LuCI's tick is running at all,
-	 * and `timer` is deleted by stop() — so an absent field is the ordinary "nothing to protect"
-	 * case on a page with no pollers, not a sign that upstream moved it. The anomaly worth reporting
-	 * is the pair disagreeing: a tick that is running while the id it runs on has no name we know.
-	 * Then do NOTHING, once, loudly: a view's leftover interval outliving its page costs a wasted
-	 * RPC, whereas clearing LuCI's own tick costs every live value on every later page. */
-	/* …and the ALIAS ITSELF is the first thing that can go — it is the deprecation the paragraph
-	 * above is about, so this function cannot be the one place that reads it blind. Every other
-	 * `L.Poll` read in this file is guarded, and an unguarded one here throws where a throw costs
-	 * most: navigate() calls this inside the staged render, after the chrome has already switched to
-	 * the incoming page and before its module is required, so a TypeError would leave every click
-	 * showing the previous page's content under the new page's title and menu mark, with the
-	 * navigation dead in a rejected promise — far worse than the leaked interval this exists to
-	 * sweep. No alias is the same answer as an unreadable timer: do NOTHING, once, loudly. */
+/* WHICH id IS LuCI'S OWN TICK — asked in ONE place, because two callers need the answer and both
+ * pay the same price for getting it wrong: the navigation sweep below, and the hidden-tab pause in
+ * the interval hook above (which used to take the tick with the view timers and hand it back on an
+ * id L.Poll had never heard of).
+ *
+ * `L.Poll.timer` is that id, and it is private state — `add`/`remove`/`start`/`stop`/`active` are
+ * the documented surface, and upstream has already marked the whole `L.Poll` alias deprecated
+ * (`'require poll'` is its replacement, and neither 24.10 nor 25.12 ships poll.js yet, so the alias
+ * is still the only way in). If the field is ever renamed, a caller reading it blind would treat
+ * LuCI's tick as a view's: cleared on the next navigation, every poll on every later page silently
+ * dead. So a missing field is not a null — it is a reason to do NOTHING, once, loudly. A view's
+ * leftover interval outliving its page costs a wasted RPC; losing the global tick costs the
+ * router's live data.
+ *
+ * Asked through the DOCUMENTED half first: `active()` says whether the tick is running at all, and
+ * `timer` is deleted by `stop()` — so an absent field is the ordinary "nothing to protect" case on
+ * a page with no pollers, not a sign that upstream moved anything. The anomaly worth reporting is
+ * the pair DISAGREEING: a tick that is running while the id it runs on has no name we know.
+ *
+ * The alias itself is the first thing that can go, so this cannot be the one place that reads it
+ * unguarded either: the sweep is called inside the staged render, after the chrome has switched to
+ * the incoming page and before its module is required, and a TypeError there would leave every
+ * click showing the previous page's content under the new page's title, the navigation dead in a
+ * rejected promise. No alias is the same answer as an unreadable timer.
+ */
+/* -> the tick's id; `null` when LuCI is not polling and there is nothing to protect; `false` when
+ * the two cannot be told apart, which every caller reads as "leave every interval alone". */
+function pollTickId() {
 	if (!L.Poll) {
 		warnPollUnreadable('footstrap: L.Poll is gone from this luci-base, so LuCI\'s own tick cannot be '
 			+ 'told apart from a view\'s timers — leaving view intervals alone. fs-router.js needs '
 			+ 'updating for this luci-base.');
-		return;
+		return false;
 	}
 	const running = (typeof L.Poll.active === 'function') ? L.Poll.active() : (L.Poll.timer != null);
 	if (running && L.Poll.timer == null) {
 		warnPollUnreadable('footstrap: LuCI is polling but L.Poll.timer is not readable — leaving view '
 			+ 'intervals alone rather than risking its tick. fs-router.js needs updating for this '
 			+ 'luci-base.');
-		return;
+		return false;
 	}
-	const keep = running ? L.Poll.timer : null;
+	return running ? L.Poll.timer : null;
+}
+function clearViewIntervals() {
+	const keep = pollTickId();
+	if (keep === false) return;
 	/* Map, not Set: the key is the timer id and the value is what it would take to re-arm it */
 	_viewIntervals.forEach((spec, id) => { if (id !== keep) window.clearInterval(id); });
 }
@@ -279,6 +323,22 @@ function markExpired() {
 	 * ended, and the very next click sends the user to a login form. */
 	console.warn('footstrap: the LuCI session is gone — every navigation from here is a full load.');
 }
+/* AND THE VERDICT IS NOT A LATCH. It was, and the shape was wrong for a signal read off somebody
+ * else's reply: an interceptor sees `msg` only once the transport succeeded and the body parsed
+ * (rpc.js rejects before that), so a missing frame is not a network flap — but it IS a captive
+ * portal's page, a proxy's error body, one truncated reply. Any of those took the client router off
+ * for the rest of the document while the session was alive throughout, explained by one console
+ * line nobody reads until later.
+ *
+ * A clean `session.access` is the same call the failing one was, so it is evidence in the other
+ * direction and it is taken as such. If the session really has ended no clean one arrives, because
+ * every ubus call carries the same dead sid — the router stays off exactly as long as it should. */
+function markAlive() {
+	if (!_expired) return;
+	_expired = false;
+	console.warn('footstrap: the LuCI session answers again — client navigation is back on.');
+}
+function sessionExpired() { return _expired; }
 function watchSession() {
 	if (_sessionWired) return;
 	_sessionWired = true;
@@ -298,9 +358,22 @@ function watchSession() {
 		rpc.addInterceptor((msg, r) => {
 			try {
 				if (!r || r.object !== 'session' || r.method !== 'access') return;
-				if (!msg || msg.jsonrpc !== '2.0' ||
-				    (msg.error && msg.error.code && msg.error.message))
-					markExpired();
+				if (!msg || msg.jsonrpc !== '2.0') return;
+				/* an `error` carrying both a code and a message is what handleCallReply() rejects
+				 * on, and a rejected session probe is the signal. A frame that is not JSON-RPC 2.0
+				 * is rejected there too, but it says nothing about the SESSION. */
+				if (msg.error && msg.error.code && msg.error.message) { markExpired(); return; }
+				/* AND ONLY `access: true` SAYS THE SESSION IS THERE — measured on the stands, because
+				 * this is the one place where guessing costs the whole fix. A dead sid does not make
+				 * this call fail: `session.access` answers `[0, {access:false}]` with HTTP 200 and no
+				 * error frame at all (the `-32002` arrives on the ORDINARY call, which is what makes
+				 * luci-base fire this probe in the first place). So "the reply parsed" would have
+				 * been read as "the session is back", and the verdict a 403 had just reached would
+				 * be cleared by the very probe that confirms it. `access:false` stays out of BOTH
+				 * answers: an ACL denial for a restricted user looks exactly the same, which is why
+				 * it may not expire a session either. */
+				if (Array.isArray(msg.result) && msg.result[1] && msg.result[1].access === true)
+					markAlive();
 			}
 			catch (e) { /* ditto */ }
 		});
@@ -1258,9 +1331,73 @@ function bootDocumentIsOurs() {
 	return tree.viewClassFor(node) != null;
 }
 
+/* ---- the boot contract: the luci-base surfaces this router CALLS, looked up before it wires ----
+ *
+ * Every module here is written against somebody else's code, and against parts of it that were never
+ * an API: `L.Poll` is a deprecated alias, `L.dom.content` and `ui.instantiateView` are what `view.ut`
+ * happens to use, `Request.addInterceptor` is how the session probe hears a 403. None of those is a
+ * promise anyone made. tools/upstream-contract.mjs asks whether they still BEHAVE as assumed, which
+ * is the deeper question — but it only ever runs here, against the two userlands this repo owns. On
+ * a router carrying a luci-base that MOVED (a fork, a backport, a distribution that trims luci.js),
+ * the first anyone learns of it is a click that opens nothing: the interception ran, the swap threw
+ * halfway, and the user is left on a page the theme half tore down.
+ *
+ * So: existence is checked at boot, once, and a missing name turns the router OFF rather than on-and-
+ * broken. The page is then the plain server-dispatched MPA the theme was before the router existed —
+ * every link a full load, nothing else lost, and the console says WHICH name is gone so the report
+ * that reaches this repo names it too.
+ *
+ * Deliberately existence-only. A probe that called these to see what they answer would have to run
+ * them for effect (there is no dry `instantiateView`), and a boot check that navigates is worse than
+ * the fault it looks for. Semantics stay in the live gate, which is why both files point at each
+ * other.
+ *
+ * The list is what THIS file calls, and nothing else: `uci` (flushUciCache) and `L.network` are read
+ * through their own guards a few lines from their use, because they are optional there — a document
+ * that never loaded network.js has nothing to refill. */
+const CONTRACT = [
+	[ 'L.require', () => typeof window.L.require === 'function' ],
+	/* classLoaded() tests `instanceof L.Class` to tell a loaded module from L.env/L.url/L.get */
+	[ 'L.Class', () => typeof window.L.Class === 'function' ],
+	[ 'L.dom.content', () => window.L.dom && typeof window.L.dom.content === 'function' ],
+	/* the four L.env keys navigate() RE-POINTS: a view reads them to know which page it is on */
+	[ 'L.env.{base_url,dispatchpath,requestpath,pathinfo,nodespec}', () => {
+		const env = window.L.env;
+		return !!env && [ 'base_url', 'dispatchpath', 'requestpath', 'pathinfo', 'nodespec' ]
+			.every((k) => k in env);
+	} ],
+	[ 'L.Poll.queue', () => window.L.Poll && Array.isArray(window.L.Poll.queue) ],
+	[ 'L.Poll.start/stop', () => window.L.Poll &&
+		typeof window.L.Poll.start === 'function' && typeof window.L.Poll.stop === 'function' ],
+	[ 'L.Request.addInterceptor', () => window.L.Request &&
+		typeof window.L.Request.addInterceptor === 'function' ],
+	[ 'rpc.addInterceptor', () => typeof rpc.addInterceptor === 'function' ],
+	[ 'ui.instantiateView', () => typeof ui.instantiateView === 'function' ],
+	[ 'ui.hideModal', () => typeof ui.hideModal === 'function' ],
+	[ 'ui.hideIndicator', () => typeof ui.hideIndicator === 'function' ],
+	[ 'ui.addNotification', () => typeof ui.addNotification === 'function' ]
+];
+
+/* -> the names that are NOT there, in list order; empty means the document can be navigated.
+ * A probe that throws counts as missing: `L` itself may be a shape nobody here expected. */
+function contractBreaks() {
+	return CONTRACT.filter(([ , present ]) => {
+		try { return !present(); }
+		catch (e) { return true; }
+	}).map(([ name ]) => name);
+}
+
 function wireRouter() {
 	if (_wired) return;
 	_wired = true;
+
+	const broken = contractBreaks();
+	if (broken.length) {
+		console.error('footstrap: this luci-base has no ' + broken.join(', ') +
+			' — the client router stays off and every link is a full page load, which is what the ' +
+			'theme did before it existed. Please report this line: docs/spa-router.md');
+		return;
+	}
 
 	if (!bootDocumentIsOurs())
 		return;
@@ -1409,6 +1546,14 @@ return baseclass.extend({
 	wire: wireRouter,
 	wireVisibility,
 	onNavigate,
+	/* exported for the unit suite (tests/router-contract.test.mjs), which drives it against a
+	 * hand-broken `L` — the one way to see the OFF branch without a router that ships one */
+	contractBreaks,
+	/* likewise: tests/interval-pause.test.mjs drives the navigation sweep around a visibilitychange,
+	 * and tests/session-expiry.test.mjs reads the verdict the interceptors reached. navigate() is
+	 * the real caller of the first and `_expired` gates the second — nothing else may call either. */
+	clearViewIntervals,
+	sessionExpired,
 	/* fs-search warms the pages this admin actually uses (its recents) and the arrow-key-highlighted
 	 * result, both of which the pointer/focus triggers above cannot see. The edge points that way
 	 * round — search → router — because the router must keep no dependency on the palette. */

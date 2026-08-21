@@ -240,15 +240,11 @@ return view.extend({
 			return [ fam, pr ].filter(x => x).join(' · ') || '–';
 		};
 
-		const rows = entries.slice().reverse();
-		const pages = Math.max(1, Math.ceil(rows.length / pageSize));
-
-		if (this.page >= pages)
-			this.page = pages - 1;
-
-		this.renderPager(rows.length, pages);
-
-		this.table.update(rows.slice(this.page * pageSize, (this.page + 1) * pageSize).map(e => [
+		/* Build the cells first, then sort them: the sort key comes out of a
+		 * cell, and ui.Table only ever orders the rows it was handed, so
+		 * paging first would turn the headers into a per-page sort while the
+		 * count below still speaks for every measurement. */
+		let rows = entries.slice().reverse().map(e => [
 			[ e.epoch ?? 0, when(e) ],
 			(e.server && e.server.name) || '–',
 			e.interface || '–',
@@ -257,7 +253,28 @@ return view.extend({
 			[ num(e.upload_mbps), fmtNum(e.upload_mbps, 2) ],
 			[ num(e.ping_ms), fmtNum(e.ping_ms, 1) ],
 			[ num(e.jitter_ms), fmtNum(e.jitter_ms, 1) ]
-		]));
+		]);
+
+		const sorting = this.table.getActiveSortState();
+
+		if (sorting)
+			rows = rows
+				.map(L.bind(function(r) {
+					return [ this.table.deriveSortKey(r[sorting[0]], sorting[0]), r ];
+				}, this))
+				.sort((a, b) => sorting[1]
+					? -L.naturalCompare(a[0], b[0])
+					: L.naturalCompare(a[0], b[0]))
+				.map(x => x[1]);
+
+		const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+
+		if (this.page >= pages)
+			this.page = pages - 1;
+
+		this.renderPager(rows.length, pages);
+		this.table.update(rows.slice(this.page * pageSize, (this.page + 1) * pageSize));
+
 	},
 
 	/* Shown only when there is more than one page; the count is always
@@ -312,6 +329,14 @@ return view.extend({
 			_('Download [Mbps]'), _('Upload [Mbps]'), _('Ping [ms]'), _('Jitter [ms]')
 		], { id: 'librespeed-history' });
 		this.tableNode = this.table.render();
+		/* The table's own handler re-sorts the page it holds; this runs
+		 * after it and re-sorts the range, from the first page. */
+		this.tableNode.addEventListener('click', L.bind(function(ev) {
+			if (ev.target.closest('th[data-sortable-row], .th[data-sortable-row]')) {
+				this.page = 0;
+				this.redraw();
+			}
+		}, this));
 
 		const renderControls = L.bind(function() {
 			const groups = lscommon.switcher(this,

@@ -46,10 +46,6 @@ function download(name, mime, text) {
 	window.URL.revokeObjectURL(url);
 }
 
-/* Bumped whenever librespeed.css changes, so a routine page load picks the
- * new stylesheet up instead of pairing new views with a cached old one. */
-const CSS_VERSION = '19';
-
 function metricOf(key) {
 	return METRICS.find(m => m[0] == key);
 }
@@ -142,20 +138,16 @@ return baseclass.extend({
 	GROUPS: GROUPS,
 	RANGES: RANGES,
 
-	/* The app stylesheet, cache-busted by its own version: LuCI's resource
-	 * version only changes when luci-base does, which is not when we do. */
+	/* Linked plainly, the way the other applications do: uhttpd serves
+	 * static resources with ETag revalidation, so an upgraded stylesheet
+	 * reaches the browser without a cache-busting version to maintain. */
 	cssLink() {
 		return E('link', {
 			'rel': 'stylesheet',
-			'href': L.resource('librespeed/librespeed.css') + '?v=' + CSS_VERSION
+			'href': L.resource('librespeed/librespeed.css')
 		});
 	},
 
-	/* Plain figures of one series: what is normal, how much it wobbles, and
-	 * where it stands now. The story sentences are built from these. On
-	 * daily aggregates the extremes come from the _min/_max columns the
-	 * chart also draws -- min/max of the daily means would understate the
-	 * spread and contradict the band directly above the sentence. */
 	/* One token->label table for the schedule intervals: Settings builds
 	 * its choices from it and the Test page looks the status label up, so
 	 * the two cannot drift. The init script accepts more shapes than these
@@ -173,6 +165,11 @@ return baseclass.extend({
 	 * come through here, or the date-only guard gets lost in a copy. */
 	chartStampFull: chartStampFull,
 
+	/* Plain figures of one series: what is normal, how much it wobbles, and
+	 * where it stands now. The story sentences are built from these. On
+	 * daily aggregates the extremes come from the _min/_max columns the
+	 * chart also draws -- min/max of the daily means would understate the
+	 * spread and contradict the band directly above the sentence. */
 	seriesStats(entries, metric, resolution) {
 		const vals = (entries || []).map(e => e[metric]).filter(v => typeof v == 'number');
 

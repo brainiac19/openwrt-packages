@@ -29,6 +29,7 @@ ucode /usr/share/rpcd/ucode/librespeed.uc >/dev/null \
 line=$(. /usr/share/libubox/jshn.sh; json_init; json_add_int epoch 1; json_dump) \
 	|| fail "jshn not usable"
 echo "$line" | awk 'match($0, /"epoch":[[:space:]]*[0-9]+/) { ok = 1 }
+	{ print }
 	END { exit !ok }' || fail "retention regex does not match jshn output"
 
 echo "librespeed-common: installed files OK"

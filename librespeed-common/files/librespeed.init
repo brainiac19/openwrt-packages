@@ -24,7 +24,11 @@ valid_field() {
 	for part in $val; do
 		IFS="$oifs"
 		a=${part%-*}; b=${part#*-}
-		case "$a$b" in ''|*[!0-9]*) return 1 ;; esac
+		# Each half on its own: concatenated, '5-' and '-5' hide their empty
+		# side and the arithmetic below would print a shell error where the
+		# caller promises a silent fallback.
+		case "$a" in ''|*[!0-9]*) return 1 ;; esac
+		case "$b" in ''|*[!0-9]*) return 1 ;; esac
 		[ "$a" -le "$max" ] && [ "$b" -le "$max" ] && [ "$a" -le "$b" ] || return 1
 	done
 	IFS="$oifs"

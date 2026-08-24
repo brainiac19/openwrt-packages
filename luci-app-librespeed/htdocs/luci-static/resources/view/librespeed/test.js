@@ -238,7 +238,7 @@ return view.extend({
 		/* The stability story of the last day, told in one sentence and four
 		 * figures: what is normal, how much it wobbles, where it is now. */
 		const metric = this.recentMetric || 'download_mbps';
-		const st = lscommon.seriesStats(entries, metric);
+		const st = lscommon.seriesStats(entries, metric, data && data.resolution);
 
 		if (st && st.count > 1) {
 			const varPct = (st.max - st.min) / st.avg * 100,
@@ -425,6 +425,10 @@ return view.extend({
 				rows.push(E('p', { 'class': 'spinning', 'style': 'margin-top:.75em' },
 					[ _('Connecting to the test server…') ]));
 			else {
+				/* The dial is hidden from assistive tech -- its ten tick
+				 * labels are noise there -- so the one figure it carries,
+				 * the running rate, is repeated as plain hidden text that
+				 * browse mode can still reach. */
 				const holder = E('div', { 'aria-hidden': 'true' });
 				holder.innerHTML = gauge(
 					(typeof status.mbps == 'number' && status.mbps > 0)
@@ -432,6 +436,9 @@ return view.extend({
 					this.runTop,
 					status.phase == 'upload' ? 1 : 0);
 				rows.push(holder);
+				if (typeof status.mbps == 'number' && status.mbps > 0)
+					rows.push(E('span', { 'class': 'librespeed-visually-hidden' },
+						[ '%.2f Mbps'.format(status.mbps) ]));
 			}
 
 			/* Completion is a different number than the rate on the arc, so
@@ -663,9 +670,11 @@ return view.extend({
 		 * well sit in another one, so it only formats the epoch. */
 		const sched = config.schedule || {};
 		const next = sched.next_runs || [];
-		const schedRows = [ [ _('Enabled'), sched.enabled ? _('Yes') : _('No') ] ];
+		/* Strict, matching history.js: the backend derives this from the
+		 * crontab and emits a real boolean, never UCI's '0'/'1'. */
+		const schedRows = [ [ _('Enabled'), sched.enabled === true ? _('Yes') : _('No') ] ];
 
-		if (sched.enabled) {
+		if (sched.enabled === true) {
 			/* The shared table translates the six tokens the UI offers; the
 			 * init script accepts more, so the raw token is the fallback. */
 			schedRows.push([ _('Interval'),

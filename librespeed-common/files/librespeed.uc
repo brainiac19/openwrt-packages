@@ -131,16 +131,22 @@ function cron_next(line, count) {
 	// A miss skips the rest of the day or hour instead of walking its
 	// minutes; that keeps this cheap inside rpcd's event loop, and cheap
 	// enough for a five-week horizon, which a weekly schedule needs to
-	// fill three rows where eight days could not. localtime() is taken
-	// fresh after every jump, so a DST shift only shortens one skip.
+	// fill three rows where eight days could not. The day jump aims at
+	// 23:00, not midnight: it is computed in local minutes but applied as
+	// real ones, and across a spring-forward that lands an hour long --
+	// from 23:00 the hour branch walks the last hour and cannot overshoot
+	// into minutes that were never examined.
 	for (let i = 0; i < 35 * 24 * 60 && length(out) < count; ) {
 		t += 60;
 		const lt = localtime(t);
 		let skip;
 
 		// % 7 folds both weekday conventions onto cron's 0-6 with Sunday 0.
-		if (!match_field(f[4], lt.wday % 7))
-			skip = (24 - lt.hour) * 60 - lt.min;
+		if (!match_field(f[4], lt.wday % 7)) {
+			skip = (24 - lt.hour) * 60 - lt.min - 60;
+			if (skip <= 0)
+				skip = 60 - lt.min;
+		}
 		else if (!match_field(f[1], lt.hour))
 			skip = 60 - lt.min;
 		else {

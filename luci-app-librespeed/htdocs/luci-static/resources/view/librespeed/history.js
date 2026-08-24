@@ -203,6 +203,9 @@ return view.extend({
 		const noneAtAll = !this.entries.length;
 
 		if (!entries.length) {
+			/* Strict, matching test.js: the backend emits a real boolean
+			 * (derived from UCI, never its raw '0'/'1'), and an absent or
+			 * failed config must read as "history on", not off. */
 			const histOff = noneAtAll && this.config &&
 				this.config.history && this.config.history.enabled === false;
 

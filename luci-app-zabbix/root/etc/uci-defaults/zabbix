@@ -1,4 +1,12 @@
 #!/bin/sh
+[ ! -f "/usr/share/ucitrack/luci-app-zabbix.json" ] && {
+    cat > /usr/share/ucitrack/luci-app-zabbix.json << EEOF
+{
+    "config": "zabbix",
+    "init": "zabbix"
+}
+EEOF
+}
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@zabbix[-1]

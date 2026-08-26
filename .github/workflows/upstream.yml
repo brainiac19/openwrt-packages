@@ -220,7 +220,7 @@ jobs:
           (
           git_clone https://github.com/kenzok8/openwrt-daede && mv -f openwrt-daede/*dae* ./;rm -rf openwrt-daede
           git_clone https://github.com/kenzok8/vmlinux-btf vmlinuxb && mvdir vmlinuxb
-          # git_clone https://github.com/QiuSimons/luci-app-daed-next daed1 && mvdir daed1
+          git_clone https://github.com/QiuSimons/luci-app-daed daed1 && mv -f daed1/luci-app* ./;rm -rf daed1
           git_clone https://github.com/JiaY-shi/fancontrol fanc && mv fanc/{fancontrol,luci-app-fancontrol} ./;rm -rf fanc
           git_sparse_clone master "https://github.com/coolsnowwolf/lede" package/lean package/network/services/shellsync package/qca/shortcut-fe
           git_clone https://github.com/linkease/istore-packages
@@ -378,7 +378,7 @@ jobs:
           net/amule net/cdnspeedtest net/minieap net/ddns-go net/sysuh3c net/3proxy net/cloudreve \
           net/go-nats net/go-wol net/bitsrunlogin-go net/transfer net/udp2raw net/msd_lite \
           net/subconverter net/ngrokc net/scutclient net/gost net/ua2f net/dufs net/frp net/qBittorrent-Enhanced-Edition \
-          net/tinyportmapper net/nexttrace net/rustdesk-server net/tuic-server \
+          net/tinyportmapper net/nexttrace net/rustdesk-server net/tuic-server net/transmission-web-control \
           net/ipset-lists net/ShadowVPN net/nps net/dnsforwarder \
           net/ps3netsrv net/brook net/q \
           net/vsftpd net/smartdns net/p910nd \

@@ -54,11 +54,20 @@ const RECENT_KEY = 'fs-recent';
 const RECENT_MAX = 8;
 const RECENT_WARM = 5;
 
-function remember(segs) {
-	if (!Array.isArray(segs) || !segs.length) return;
-	const path = segs.join('/');
+/* A key is a menu path, or a page path plus the heading of a section inside it
+ * (`admin/system/system#Footstrap`) — a section has no dispatcher node to name it, and only the
+ * source that produced the row can build that half. Exported for exactly that: the writer stays
+ * one function, or the two halves would drift on the cap and the de-duplication. */
+function remember(key) {
+	if (typeof key !== 'string' || !key) return;
 	const recent = prefs.lsGetArr(RECENT_KEY).filter((x) => typeof x === 'string');
-	prefs.lsSet(RECENT_KEY, JSON.stringify([ path ].concat(recent.filter((p) => p !== path)).slice(0, RECENT_MAX)));
+	prefs.lsSet(RECENT_KEY, JSON.stringify([ key ].concat(recent.filter((p) => p !== key)).slice(0, RECENT_MAX)));
+}
+
+/* the page half of a key: what the router can navigate to and what warmRecent() prefetches */
+function pageOf(key) {
+	const h = key.indexOf('#');
+	return h < 0 ? key : key.slice(0, h);
 }
 
 /* ---- warm the pages this admin actually uses ----
@@ -75,8 +84,10 @@ function remember(segs) {
 function warmRecent() {
 	try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) {}
 	const here = (L.env.dispatchpath || []).join('/');
-	const paths = prefs.lsGetArr(RECENT_KEY)
-		.filter((p) => typeof p === 'string' && p !== here).slice(0, RECENT_WARM);
+	/* Keys, not paths: a section key names the page it sits on, and two sections of one page must
+	 * warm it once — the module chain is the page's. */
+	const keys = prefs.lsGetArr(RECENT_KEY).filter((p) => typeof p === 'string');
+	const paths = [ ...new Set(keys.map(pageOf)) ].filter((p) => p !== here).slice(0, RECENT_WARM);
 	if (!paths.length) return;
 	const go = () => paths.forEach((p) => router.prefetchSegs(p.split('/')));
 	if (typeof window.requestIdleCallback === 'function')
@@ -91,32 +102,54 @@ function wireSearch() {
 	const RT = window.L;
 
 	/* the page this full load landed on; onNavigate covers the SPA path afterwards */
-	remember(L.env.dispatchpath || []);
-	router.onNavigate(remember);
+	const rememberSegs = (segs) => remember((segs || []).join('/'));
+	rememberSegs(L.env.dispatchpath);
+	router.onNavigate(rememberSegs);
 	warmRecent();
 
 	/* One fetch, on the first gesture. The module builds its overlay and opens itself; every later
-	 * gesture reaches the same instance, `require` being a singleton. */
-	let pending = false;
+	 * gesture reaches the same instance, `require` being a singleton.
+	 *
+	 * …and then this half stands down: fs-search binds its own toggle to the same button and its
+	 * own copies of Ctrl+K and `/`, so while both were live the module's toggle closed the palette
+	 * and this one re-opened it in the microtask after, and the button looked broken. */
+	let pending = false, loaded = false;
 	const open = () => {
-		if (pending) return;
+		if (pending || loaded) return;
 		pending = true;
-		RT.require('fs-search').then((m) => { pending = false; m.open(); },
+		RT.require('fs-search').then((m) => { pending = false; loaded = true; m.open(); },
 			(e) => { pending = false; console.error('footstrap: fs-search did not load', e); });
 	};
 
-	btn.addEventListener('click', open);
+	btn.addEventListener('click', () => open());
 	/* the same two shortcuts the palette used to own, with the same guard: `/` must not steal a
 	 * keystroke from someone typing into a field, a contenteditable, or a .cbi-dropdown, where
 	 * fs-select.js's typeahead reads it as a search character */
 	document.addEventListener('keydown', (ev) => {
-		if (ev.defaultPrevented) return;
+		if (ev.defaultPrevented || loaded) return;
 		if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === 'k' || ev.key === 'K')) {
 			ev.preventDefault(); open(); return;
 		}
 		if (ev.key !== '/' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
 		if (ev.target.closest?.('input, textarea, select, [contenteditable], .cbi-dropdown')) return;
 		ev.preventDefault(); open();
+	});
+}
+
+/* ---- optional companion packages ----
+ *
+ * header.ut prints `window.__fsPlugins` from `footstrap.settings.plugin`, a list a package writes
+ * from its own uci-defaults; each entry is a LuCI module name, already whitelisted there. The
+ * chrome requires each one after everything below is wired — a plugin registers itself through the
+ * seams the theme exports (`fs-router.onNavigate`, `fs-search.addSource`) and the theme names
+ * nobody. A plugin that throws costs only itself.
+ *
+ * No plugin, no cost: an empty list is the shipped state and this loop does nothing. */
+function loadPlugins() {
+	const RT = window.L;
+	const names = Array.isArray(window.__fsPlugins) ? window.__fsPlugins : [];
+	names.forEach((name) => {
+		RT.require(name).catch((e) => console.error('footstrap: plugin ' + name + ' did not load', e));
 	});
 }
 
@@ -198,6 +231,10 @@ ensureOverviewHelpers();
  * halves (fs-menutree, fs-prefs) are separate modules. */
 
 return baseclass.extend({
+	/* the seam a companion package writes its own rows into the recents list through; see
+	 * remember() for what a key is */
+	remember,
+
 	init(renderMainMenu) {
 		/* First, and outside the promise: a third-party sheet that outranks the chrome is already
 		 * painting (fs-sheets: openclash's `* { margin: 0; padding: 0 }`). Deferring this to
@@ -227,6 +264,9 @@ return baseclass.extend({
 			wirePageModules();
 			router.wire();
 			router.wireVisibility();
+			/* last: a plugin registers against the parts above, and a broken one must not be able
+			 * to take the chrome with it */
+			loadPlugins();
 		/* no sane partial recovery — a throw above loses the menu, the router and the Appearance
 		 * tab together — so this fails loudly rather than silently */
 		}).catch((e) => console.error('footstrap: chrome init failed', e));

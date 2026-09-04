@@ -93,7 +93,7 @@ jobs:
           (
           git_clone https://github.com/Openwrt-Passwall/openwrt-passwall && mvdir openwrt-passwall
           git_clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages && mvdir openwrt-passwall-packages
-          git_clone https://github.com/sbwml/luci-app-mosdns openwrt-mos && mv -n openwrt-mos/{*mosdns,v2dat} ./; rm -rf openwrt-mos
+          git_clone https://github.com/sbwml/luci-app-mosdns openwrt-mos && mv -n openwrt-mos/{*mosdns,geo2txt} ./; rm -rf openwrt-mos
           git_clone https://github.com/Lienol/openwrt-package liep && rm -rf liep/other
           git_clone https://github.com/rufengsuixing/luci-app-autoipsetadder
           git_clone https://github.com/NateLol/luci-app-beardropper
@@ -254,7 +254,7 @@ jobs:
           git_clone https://github.com/gSpotx2f/luci-app-interfaces-statistics
           git_clone https://github.com/gSpotx2f/luci-app-cpu-status-mini
           git_clone https://github.com/gSpotx2f/luci-app-cpu-status
-          git_clone https://github.com/Carseason/openwrt-packages Carseason1 && mv -n Carseason1/*/* ./;mv services/* ./;rm -rf Carseason1 services
+          git_clone https://github.com/Carseason/openwrt-packages Carseason1 && mv -n Carseason1/*/* ./;rm -rf Carseason1
           git_clone https://github.com/Carseason/openwrt-themedog && mv -n openwrt-themedog/luci/* ./;rm -rf openwrt-themedog
           git_clone https://github.com/Carseason/openwrt-app-actions Carseason2 && mv -n Carseason2/applications/* ./;rm -rf Carseason2
           git_clone https://github.com/Thaolga/openwrt-nekobox && mv openwrt-nekobox/luci-* ./;rm -rf openwrt-nekobox
@@ -362,10 +362,8 @@ jobs:
           package/utils/mhz package/utils/pcat-manager
           ) &
           (
-          npx --yes degit 'dibdot/luci/applications/luci-app-shunt#luci-app-shunt-pr' luci-app-shunt
-          npx --yes degit 'dibdot/packages/net/shunt#shunt-pr' shunt
           git_sparse_clone master "https://github.com/x-wrt/com.x-wrt" luci-app-macvlan luci-app-xwan
-          git_sparse_clone master "https://github.com/obsy/packages" oscam luci-proto-wwan 3ginfo
+          # git_sparse_clone master "https://github.com/obsy/packages" oscam luci-proto-wwan 3ginfo
           git_sparse_clone istoreos-24.10 "https://github.com/jjm2473/packages" utils/dockerd
           git_sparse_clone master "https://github.com/teleofis/teleofis-feed" luci packages; rm -rf luci/luci-app-{pollmydevice,simman*,strongswan,pingcontrol} luci/luci-theme-teleofis; mvdir luci; \
           rm -rf packages/{base-files*,*lt70*,cp210x-cfg,fbfdownloader,pollmydevice,simman*,pingcontrol}; mvdir packages

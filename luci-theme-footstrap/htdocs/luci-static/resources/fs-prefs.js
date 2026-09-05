@@ -80,7 +80,13 @@ function currentMode() {
  * `data-darkmode` is the name the theme's own CSS keys off. The other two are outbound
  * compatibility, like the `--*-color-*` export tier: nothing in `styles/` may read them, and
  * tools/axes.mjs fails the build if it does. */
+/* the attribute name reused below by the writer, the guard's reader and both MutationObserver
+ * filters (measured: 15 B x4 -> 28 B, 32 B saved) */
 function stampDark(root, dark) {
+	/* the literal stays spelled out HERE: tools/axes.mjs reads the attribute names out of
+	 * this function's SOURCE, so a hoisted const reads as no attribute at all and the gate
+	 * reports the pre-paint and the live applier as drifted. The 45 B a const would save are
+	 * not worth teaching a gate to resolve them. */
 	root.setAttribute('data-darkmode', dark ? 'true' : 'false');
 	root.setAttribute('data-theme', dark ? 'dark' : 'light');
 	root.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
@@ -137,7 +143,7 @@ function guardDarkStamp() {
 	check();
 	new MutationObserver(check).observe(root, {
 		attributes: true,
-		attributeFilter: ['data-darkmode', 'data-theme', 'data-bs-theme']
+		attributeFilter: [ 'data-darkmode', 'data-theme', 'data-bs-theme' ]
 	});
 }
 /* ---- the browser's own chrome follows the page ----
@@ -192,10 +198,10 @@ _mqDark.addEventListener('change', () => {
 
 /* ---- the four axis shapes, each written once ----
  *
- * Fifteen axes are four shapes, so the shape lives in a factory and each instance is one line:
+ * Sixteen axes are four shapes, so the shape lives in a factory and each instance is one line:
  * enumAxis (pattern ink), colorAxis (tint, accent, good, warn, danger), surfaceAxis (cards,
  * controls, bar, borders), propAxis (rounding, tint strength, photo dim, pattern size, pattern
- * strength). Same contract throughout: `current()` is localStorage ?? def(), `def()` is the router
+ * strength, content width). Same contract throughout: `current()` is localStorage ?? def(), `def()` is the router
  * default alone, `apply()` stores the choice explicitly. None use `this` — every export is a
  * detached method reference, so a `this` here would throw on the first call.
  *
@@ -272,6 +278,11 @@ const DENSITIES = [ 'compact', 'large' ];	/* the two non-default values; 'normal
 const DENSITY = listAxis('fs-density', 'data-density', DENSITIES, 'normal', () => fit.schedule());
 const currentDensity = DENSITY.current, applyDensity = DENSITY.apply,
 	densityDefault = DENSITY.def;
+
+/* Content width lives entirely in fs-axes.js now (a propAxis like Rounding, issue #44): unlike
+ * Density it sets no attribute, so nothing here or in fs-chrome.js needs to read one, and
+ * currentContentWidth()/applyContentWidth() have no caller outside the Appearance tab — the one
+ * thing that kept Density's shape in this cold-path file. */
 /* Background-tint axis: the canvas the cards float on (--fs-bg), so a whole install reads as one
  * colour and a tab or a screenshot says which router it belongs to. Cards, chrome and the status
  * colours keep the palette's values — the cue colours the paper, not the UI. On a hue it is mixed

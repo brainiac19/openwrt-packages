@@ -296,7 +296,14 @@ function build() {
 		const node = w.render();
 		node.setAttribute('aria-label', label);
 		const push = () => apply(parseInt(w.getValue(), 10));
-		node.addEventListener('widget-update', push);
+		/* `live: false` for an axis whose value moves THIS CONTROL. Content width widens the column
+		 * the Appearance page is drawn in, so applying mid-drag slides the handle out from under
+		 * the pointer, the pointer catches up, and one small drag runs the value to the maximum —
+		 * reported from a router, and not a thing any other slider here can do: rounding and the
+		 * tint sliders repaint around a control that stays where it is. On release the page still
+		 * follows, and a keyboard user is unaffected either way: an arrow key on a range input
+		 * fires `change` as well as `input`, so the value applies at once. */
+		if (o.live !== false) node.addEventListener('widget-update', push);
 		node.addEventListener('widget-change', push);
 		return node;
 	};
@@ -343,7 +350,10 @@ function build() {
 			 * so it is a proper noun and stays untranslated, like the two above it */
 			bootstrap:  'Bootstrap',
 			/* names the OTHER package again, luci-theme-openwrt-2020, whose colourway this is */
-			'2020':     'OpenWrt 2020'
+			'2020':     'OpenWrt 2020',
+			/* names the OpenWrt forum (forum.openwrt.org), whose Discourse colourway this is —
+			 * a proper noun like the three above it, not the English common noun "forum" */
+			forum:      'Forum'
 		}, bump(repaint(axes.applyPalette)), label)),
 
 		group(_('Density', 'footstrap'), (label) => selectCtl(prefs.currentDensity(), {
@@ -351,6 +361,16 @@ function build() {
 			normal:  _('Normal', 'footstrap'),
 			large:   _('Large', 'footstrap')
 		}, bump(prefs.applyDensity), label)),
+
+		/* issue #44: the content column's own cap, separate from Density (which moves type and
+		 * air, not the column's ceiling). The slider STARTS at the 1280px the theme has always
+		 * shipped and only ever widens — there is no reason to offer a column narrower than the
+		 * one every page was designed against, and keeping 1280 as the left end also keeps
+		 * --fs-content-min (500px, what the sidebar-to-bar fold is measured against) out of reach
+		 * by construction rather than by a rule someone has to remember. */
+		group(_('Content width', 'footstrap'),
+			(label) => sliderCtl(axes.currentContentWidth(), 1280, 3840,
+				bump(axes.applyContentWidth), label, { step: 40, live: false })),
 
 		group(_('Rounding', 'footstrap'),
 			(label) => sliderCtl(axes.currentRadius(), 0, 20, bump(axes.applyRadius), label)),
@@ -575,7 +595,13 @@ function build() {
 	 * the scoped uci ACL). It does not change this browser — localStorage keeps overriding — so the
 	 * saved default only shows on a fresh browser. The two Reset buttons below are the escape
 	 * hatches, and they do not land in the same place. */
-	const saveBtn = E('button', { 'class': 'btn cbi-button-action', 'type': 'button' }, [ _('Save to router', 'footstrap') ]);
+	/* the button/status label said three times below, inside this one build() call — hoisting the
+	 * RESULT, not the msgid, so update-po.sh still sees the literal `_()` argument elsewhere
+	 * (measured: 22 B x3 -> 27 B, 39 B saved) */
+	const SAVE_TO_ROUTER = _('Save to router', 'footstrap');
+	/* said twice below, same build() call (measured: 24 B x2 -> 30 B, 18 B saved) */
+	const RESET_TO_ROUTER = _('Reset to router', 'footstrap');
+	const saveBtn = E('button', { 'class': 'btn cbi-button-action', 'type': 'button' }, [ SAVE_TO_ROUTER ]);
 	/* Two resets, because two things sit underneath a browser's tweaks (fs-prefs.js): "Reset to
 	 * router" clears them and lets every axis fall back to whatever the router holds, while "Reset
 	 * to built-in" writes the theme's built-ins explicitly — the only way to say "as the theme
@@ -585,7 +611,7 @@ function build() {
 	 * "Save as default" and the theme's in "Reset to default", while the router's look also
 	 * answered to "saved" — three names for two states, asked about on the forum (topic 251930,
 	 * post 92). The row now reads as one save and two resets, over `router` and `built-in`. */
-	const resetSavedBtn = E('button', { 'class': 'btn', 'type': 'button' }, [ _('Reset to router', 'footstrap') ]);
+	const resetSavedBtn = E('button', { 'class': 'btn', 'type': 'button' }, [ RESET_TO_ROUTER ]);
 	/* the stock destructive class, so the button discarding every local tweak is the red one
 	 * (theme/55-buttons.css). "Reset to router" stays neutral: it steps back to the shared state
 	 * rather than discarding. */
@@ -607,14 +633,14 @@ function build() {
 	function refreshSave() {
 		if (prefs.storageBroken()) {
 			saveBtn.disabled = false;
-			saveBtn.textContent = _('Save to router', 'footstrap');
+			saveBtn.textContent = SAVE_TO_ROUTER;
 			saveErr.textContent = _('This browser is not storing preferences (site data is blocked), so a change here lasts until you reload. Saving as default still works and applies to every browser.', 'footstrap');
 			saveErr.hidden = false;
 			return;
 		}
 		const saved = axes.matchesSavedDefault();
 		saveBtn.disabled = saved;
-		saveBtn.textContent = saved ? _('Saved to router', 'footstrap') : _('Save to router', 'footstrap');
+		saveBtn.textContent = saved ? _('Saved to router', 'footstrap') : SAVE_TO_ROUTER;
 	}
 	saveBtn.addEventListener('click', () => {
 		saveBtn.disabled = true;
@@ -655,7 +681,7 @@ function build() {
 			location.reload();
 		});
 	}
-	twoClick(resetSavedBtn, _('Reset to router', 'footstrap'), axes.resetToSaved);
+	twoClick(resetSavedBtn, RESET_TO_ROUTER, axes.resetToSaved);
 	twoClick(resetBtn, _('Reset to built-in', 'footstrap'), axes.resetToBuiltin);
 	refreshSave();	/* correct label and enabled state before the first paint */
 

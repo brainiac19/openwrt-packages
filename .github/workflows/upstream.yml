@@ -339,6 +339,7 @@ jobs:
           (
           git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc
           git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frps
+          git_sparse_clone frp https://github.com/laipeng668/packages net/frp
           ) &
           (
           git_sparse_clone master "https://github.com/coolsnowwolf/lede" package/wwan package/lean package/network/services/shellsync package/qca/shortcut-fe && cp -rf wwan/*/* ./ ; rm -Rf wwan
@@ -375,9 +376,9 @@ jobs:
           git_sparse_clone chawrt/24.10 "https://github.com/liudf0716/packages" net/ss-redir
           ) &
           git_sparse_clone master "https://github.com/immortalwrt/packages" net/n2n net/qbittorrent \
-          net/amule net/cdnspeedtest net/minieap net/ddns-go net/sysuh3c net/3proxy net/cloudreve \
+          net/amule net/cdnspeedtest net/minieap net/ddns-go net/sysuh3c net/3proxy utils/filebrowser net/cloudreve \
           net/go-nats net/go-wol net/bitsrunlogin-go net/transfer net/udp2raw net/msd_lite \
-          net/subconverter net/ngrokc net/scutclient net/gost net/ua2f net/dufs net/frp net/qBittorrent-Enhanced-Edition \
+          net/subconverter net/ngrokc net/scutclient net/gost net/ua2f net/dufs net/qBittorrent-Enhanced-Edition \
           net/tinyportmapper net/nexttrace net/rustdesk-server net/tuic-server net/transmission-web-control \
           net/ipset-lists net/ShadowVPN net/nps net/dnsforwarder \
           net/ps3netsrv net/brook net/q \
@@ -388,7 +389,7 @@ jobs:
           utils/phicomm-k3screenctrl utils/joker utils/7z utils/dhrystone utils/supervisor utils/tinymembench utils/pcat-mgr utils/fan2go \
           utils/coremark utils/watchcat multimedia/you-get multimedia/lux multimedia/gmediarender multimedia/ykdl multimedia/gallery-dl \
           sound/spotifyd devel/go-rice devel/rust-bindgen admin/gotop \
-          lang/lua/lua-periphery lang/lua/lua-neturl lang/lua/lua-maxminddb lang/golang devel/gn
+          lang/lua/lua-periphery lang/lua/lua-neturl lang/lua/lua-maxminddb lang/golang devel/gn lang/node/node-pnpm
           git_clone https://github.com/koshev-msk/modemfeed && mv -n modemfeed/*/!(telephony)/!(ookla-speedtest) ./; rm -rf modemfeed
           git_sparse_clone openwrt-25.12 "https://github.com/immortalwrt/luci" applications collections/luci-nginx protocols/luci-proto-minieap protocols/luci-proto-quectel
           mv -f applications luciapp && rm -rf luciapp/luci-app-firewall
@@ -407,7 +408,7 @@ jobs:
         run: |
           shopt -s extglob
           set +e
-          mv -n luciapp/!(luci-app-noddos|luci-app-filebrowser-go|luci-app-openvpn-server|luci-app-chrony|luci-app-kodexplorer|luci-app-cshark|luci-app-dnscrypt-proxy|luci-app-https-dns-proxy|luci-app-ssr-mudb-server|luci-app-ledtrig-*|luci-app-antiblock) ./ ; rm -Rf luciapp
+          mv -n luciapp/!(luci-app-noddos|luci-app-openvpn-server|luci-app-chrony|luci-app-kodexplorer|luci-app-cshark|luci-app-dnscrypt-proxy|luci-app-https-dns-proxy|luci-app-ssr-mudb-server|luci-app-ledtrig-*|luci-app-antiblock) ./ ; rm -Rf luciapp
           mv -n lean/!(r8101|r8125|r8126|r8168) ./ ; rm -Rf lean
           mv -n liep/!(luci-app-filebrowser) ./ ; rm -Rf liep
           mv -n istore-packages/!(qBittorrent*|luci-app-qbittorrent-ee|baidupcs-web|luci-app-LingTiGameAcc|inter_i40e) ./;rm -rf istore-packages

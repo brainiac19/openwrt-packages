@@ -103,8 +103,7 @@ const startupConf = [
 	{
 		enabled: '1',
 		disabled: '0',
-		default: '1',
-		optional: false,
+		default: '0',
 		rmempty: false,
 		retain: true,
 		remove: writeFlagDisabled

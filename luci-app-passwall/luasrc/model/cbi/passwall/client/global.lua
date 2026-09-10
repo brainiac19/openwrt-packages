@@ -607,7 +607,7 @@ o:value("disable", translate("No Proxy"))
 o:value("proxy", translate("Proxy"))
 o.default = "proxy"
 
-o = s:taboption("Proxy", DummyValue, "switch_mode", " ")
+o = s:taboption("Proxy", DummyValue, "switch_mode", "")
 o.template = m:template_path("/global/proxy")
 
 ---- Check the transparent proxy component
@@ -829,7 +829,7 @@ for k, v in pairs(nodes_table) do
 end
 
 m:appendTemplate("/global/footer")
-
+m:appendTemplate("/global/status_bottom")
 m:appendTemplate("/cbi/sortable", {sectiontype = s2.sectiontype})
 
 return api.return_map(m)

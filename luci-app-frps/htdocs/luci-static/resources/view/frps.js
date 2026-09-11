@@ -530,7 +530,15 @@ const commonTransportConf = [
 const commonTlsQuicConf = [
 	[form.Flag, 'tls_force', _('Force TLS'),
 	_('Only accept TLS-encrypted frpc connections.'),
-	{ datatype: 'bool', default: 'false' }],
+	{
+		enabled: 'true',
+		disabled: 'false',
+		default: 'false',
+		optional: false,
+		rmempty: false,
+		retain: true,
+		remove: writeFlagDisabled
+	}],
 
 	[form.Value, 'tls_cert_file', _('TLS certificate path'),
 	_('Path to the TLS certificate file.'),

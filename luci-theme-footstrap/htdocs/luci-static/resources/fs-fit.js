@@ -195,12 +195,82 @@ function holdFloor(records) {
 	}
 	if (!dirty.length) return;
 
+	/* THE SWEEP MAY NOT COST THE READER THE CLAMP IT EXISTS TO PREVENT — task resid. Clearing every
+	 * floor before the measure pass is what makes the answers honest (above), and for the length of
+	 * that pass the document stands without them. Measured live (chromium/owrt2512b @390 top normal,
+	 * /admin/network/dhcp, `../tmp/task-resid/dbg-before.json`): 38 sweeps, 33 of them took the
+	 * document DOWN between the clear and the write-back, and on 13 the offset went with it. Eight of
+	 * those 13 are this fault — the unscoped, every-box sweep, document 4730px to 4729px and straight
+	 * back to 4730px, offset 3886 to 3885 and NOT back. Nothing in this function is asynchronous and
+	 * `scrolling()` at the top already refused a reader who is moving, so an offset that is LOWER
+	 * after the write-back than before the clear was lowered by this pass and by nothing else — 0
+	 * sweeps of the 38 moved it the other way.
+	 *
+	 * One pixel, and it is not the pixel that matters: `lateDrift()` reads the offset twice,
+	 * SCROLL_IDLE apart, and treats any difference as "the reader has moved since" (its own comment
+	 * below). That 1px discarded the whole 60px correction the same tick's shrink was owed
+	 * (`late-refuse why: moving, seen 3886, now 3885`), and the unforced `rememberRest()` a
+	 * millisecond later adopted the wrong offset as the reference the NEXT refill measures against:
+	 * 59px off, carried forward, which is the 47-64px `REPEAT` reports on the second or third of
+	 * three back-to-back refills of one section (`tools/scroll-anchor.mjs`, docs/anchoring.md).
+	 *
+	 * ONLY WHERE THE SCROLLER IS AS TALL AGAIN AS IT WAS, which is what separates this pass's own
+	 * transient dip from a floor that came down because the CONTENT really shrank — the eight sweeps
+	 * above against the other five, on the same run, that lost 3958 to 3886 with the document
+	 * staying 120px shorter for good. That second clamp is real, it belongs to the shrink, and
+	 * `lateDrift()`'s `floorShrink` path already corrects for it; touching it here was measured too
+	 * — restoring unconditionally and letting the browser re-clamp the write is green on this cell
+	 * as well, but it also makes every genuine shrink's clamp this file's OWN write
+	 * (`sawOwnWrite()`), so the motion window that clamp used to open stops opening and
+	 * `sampleMotion()`'s terminal sweep stops running with it. The narrow form holds the cell on its
+	 * own, so the wider one does not ship.
+	 *
+	 * `writeOffset()` rather than a bare assignment: the restore is a scroll write like the two
+	 * corrections, and the motion sampler must read it as this file's own rather than as the reader
+	 * arriving. */
+	const sc = scroller(), page = sc || document.documentElement;
+	const at = scrollTop(), tall = page.scrollHeight;
 	dirty.forEach((box) => { box.style.minHeight = ''; });
-	dirty.forEach((box) => hs.push(box.offsetHeight));
+	/* THE BOX'S OWN HEIGHT, NOT `offsetHeight`'S ROUNDING OF IT — task fourevents. `offsetHeight` is
+	 * an integer, rounded to nearest, so a floor written off it stands up to half a pixel TALLER
+	 * than the content it was measured from — measured on this page's own boxes with the floors
+	 * cleared: 421.875 written back as 422, 40.75 as 41, 292.719 as 293, 475.531 as 476, 1685.656 as
+	 * 1686 (`../tmp/task-fourevents/`, the `dip` build). Twenty-two such boxes make the document 2px
+	 * taller WITH the floors than without, so every clear above shortens it by that much — 7422 to
+	 * 7420 on 57 of 64 sweeps — and a reader parked at the end of the document has their offset
+	 * clamped into the gap. That clamp is a scroll position change, which invalidates the engine's
+	 * own scroll anchor (css-scroll-anchoring-1 §2.1.1), and the growth that arrives next is then
+	 * left uncorrected: 6 of 12 refills on `owrt2410b`/webkit `@390 top normal` against 12 of 12
+	 * with the floor written at the height measured here. The rect is the same forced layout the
+	 * clear above already pays for, so this costs nothing extra. It DIFFERS from `offsetHeight` on
+	 * a transformed box — the rect is the painted size, and a floor wants the layout size — and no
+	 * box this sweep reaches is transformed: the theme's own `transform` rules are a spinner, a
+	 * rail-toggle glyph, a nav progress bar and `fs-fade`'s 4px rise, none of them a floored
+	 * container, and a scale on one would be an app's own doing. */
+	dirty.forEach((box) => hs.push(box.getBoundingClientRect().height));
 	dirty.forEach((box, i) => {
 		if (hs[i] > 0) { box.style.minHeight = hs[i] + 'px'; box.setAttribute('data-fs-floor', ''); }
 		else box.removeAttribute('data-fs-floor');
 	});
+	/* AND WHERE IT IS A REAL SHRINK, SAY SO — task wk1440. The other side of the same test: the
+	 * offset came down and the scroller stayed shorter, so the box really did give height up and
+	 * the drop is the browser's clamp into it. `applyAnchor()` is the one thing that can put back
+	 * the part of the shrink the clamp did NOT take, and it refuses while `scrolling()` — which the
+	 * clamp's own scroll event has just made true. Measured (webkit/owrtsnapb @1440 side compact,
+	 * /admin/status/overview, `../tmp/task-wk1440/`, the engine's own anchoring ablated away with
+	 * `overflow-anchor: none` so the theme is the only corrector): a 120px pad removed above the
+	 * reader took the scroller 2793 -> 2673px while the offset clamped 1889 -> 1829 — 60px short of
+	 * the 1769 the reader needed, because a clamp only ever gives back what the document lost at its
+	 * BOTTOM. One frame later `applyAnchor()` read `scrolling() true, 400ms left` and returned with
+	 * a correct -60px correction in hand; the terminal sweep's `rememberRest()` then adopted 1829 as
+	 * the reference, and every refill after it measured 0px drift against ground that was already
+	 * 60px wrong — `3x repeat 0px/-60px/-60px`, the gate's "left the reader -60px off ... corrected
+	 * never". Recorded as a PIXEL, not as a flag or a timestamp, and read back the way
+	 * `sawOwnWrite()` reads its own: it stands only while the offset has not left it, so a reader
+	 * who really does move clears it by moving. */
+	const landed = scrollTop();
+	if (landed >= at) return;
+	if (page.scrollHeight >= tall) writeOffset(sc, at); else _clampedTo = landed;
 }
 
 /* ---- is the page moving right now? asked of the position, never of the events ----
@@ -265,6 +335,22 @@ function sawOwnWrite(y) {
 	if (Math.abs(y - _ownWrite) < 1) return false;
 	_ownWrite = null;
 	return true;
+}
+/* Where the browser's own clamp last put the offset down, set by `holdFloor()`'s real-shrink branch
+ * and by nothing else — see the comment there for the measurement. NOT a second `_ownWrite`: this
+ * marker does not touch `scrolling()`, which keeps answering "the page is moving, whoever moves it"
+ * for the whole theme (task resid measured what happens when a clamp stops opening that window —
+ * `sampleMotion()`'s terminal sweep stops running behind it). It answers ONE narrower question, for
+ * `applyAnchor()` alone: is the motion that is blocking this correction the clamp the correction is
+ * FOR? */
+let _clampedTo = null;
+function sawClamp() {
+	/* the identical `scrollTop() !== seen` shape `lateDrift()` asks its own offset — the pixel was
+	 * read out of `scrollTop()` in the first place, so equality is the whole test, and `null` is
+	 * never equal to a number */
+	if (scrollTop() === _clampedTo) return true;
+	_clampedTo = null;
+	return false;
 }
 /* The one place either correction may write the scroll position, so `_ownWrite` cannot go stale by a
  * write skipping it. Reads the offset back rather than trusting the argument: a write near either
@@ -885,13 +971,44 @@ function lateDrift(ref, grow, floorShrink) {
 					/* fresh distrust starts the recovery count at 0 too — a streak from a PREVIOUS
 					 * spell of distrust proves nothing about this one */
 					if (++_lateMisses >= LATE_MISS_LIMIT) { _engineTrusted = false; _lateHits = 0; }
+					/* MIRROR OF task refill2's WRITE-PATH FIX, ON THE NO-WRITE PATH — task nine.
+					 * A miss here means the OFFSET did not fully move; it does not mean this tick's
+					 * geometry is unknown. Leaving `_rest` as `run()`'s own mid-transition capture (the
+					 * DOM already changed, nothing had compensated yet) makes THAT stale snapshot the
+					 * `ref.at`/`was` the NEXT tick measures against, same as the write path used to
+					 * before `rememberRest(true)` was added there. `seen` and `el`'s rect, just read,
+					 * ARE the true current position — uncorrected, but real — so the next comparison
+					 * should start from here, not from before this tick began. Measured, `../tmp/
+					 * task-nine/`: without this, `firefox owrt2410 @390 top overview` counted a SECOND
+					 * phantom miss off the stale baseline and tripped `_engineTrusted` false while
+					 * REPEAT's own mark never moved (misses [true,true,false]) — e0b6db4's fault on the
+					 * other side of the same comparison. */
+					rememberRest(true);
 					return;
 				}
 				/* else: within table-row rounding — drift is still whatever it was (< 1 per the guard
 				 * above), so the plain `drift < 1` return two lines down is what fires, unwritten and
 				 * uncounted: the engine did the job. */
 			}
-			if (Math.abs(drift) < 1) return;			/* the engine put it back */
+			if (Math.abs(drift) < 1) {
+				/* SAME MIRROR AS ABOVE, FOR THE "engine already got it right" EXIT — task nine.
+				 * Gated on `grow` OR `floorShrink`, not unconditional: a tick where this floored box
+				 * neither grew nor shrank pays nothing extra here (P5), and `run()`'s own synchronous
+				 * reference is only ever wrong relative to what THIS tick's mutation did. `grow` alone
+				 * is not enough — REPEAT's own SHRINK leg (the pad it removes between refills) is a
+				 * real box change `grow` reads as <=1 (growth witness is deliberately one-sided,
+				 * task detector), so gating on `grow > 1` alone left the SAME hole one level down: the
+				 * shrink between refill 1 and refill 2 left `_rest` at run()'s mid-transition capture,
+				 * and refill 2 read ITS drift against that stale baseline. Where it did change (either
+				 * way) and the engine handled it without a write, `run()`'s snapshot is still what the
+				 * NEXT tick's `lateDrift()` would measure against — masking a real residual as "small"
+				 * until it surfaces as a flat, un-recovered offset. Measured, `../tmp/task-nine/`:
+				 * gating on `grow > 1` alone left `/admin/network/dhcp @390` at 47-59px off on the
+				 * second of three back-to-back refills, unchanged — chromium/firefox/webkit alike,
+				 * `_engineTrusted` true throughout. */
+				if (grow > 1 || floorShrink > 1) rememberRest(true);
+				return;						/* the engine put it back */
+			}
 			if (Math.abs(drift) > (window.innerHeight || 800)) return;
 			const sc = scroller();
 			const at = sc ? sc.scrollTop : window.scrollY;
@@ -1050,8 +1167,19 @@ function applyAnchor(ref) {
 	if (!ref) return;
 	/* not into a moving page: the correction is scheduled from the mutation and applied a frame
 	 * later, and a reader who starts scrolling in between would be put back onto a page they have
-	 * already left */
-	if (scrolling()) return;
+	 * already left.
+	 *
+	 * UNLESS THE MOTION IS THE CLAMP THIS CORRECTION EXISTS FOR — task wk1440, the same trap
+	 * `settleDeferredFloor()`'s own third attempt already fell into once ("gating on `scrolling()`
+	 * refuses on the very motion it is trying to observe") and `lateDrift()` was built to avoid.
+	 * A shrink above the reader clamps the offset down inside `holdFloor()`'s own synchronous pass,
+	 * that clamp dispatches a `scroll` event of its own, and one frame later this guard reads it as
+	 * a reader who started moving: measured on the cell this task closes, `apply-enter scrolling
+	 * true, moving 400ms, at 1829` with a -60px correction already computed and never written.
+	 * `sawClamp()` is the pixel `holdFloor()` watched the clamp land on, and it stands only while
+	 * the offset has not left it — a reader who really is scrolling has moved off it by definition,
+	 * so this reopens the guard for exactly one case and no other. */
+	if (scrolling() && !sawClamp()) return;
 	/* through scroller(), not a second probe: two copies of the same question can answer
 	 * differently within one frame */
 	const sc = scroller();
@@ -1243,10 +1371,35 @@ function observeContent() {
 	 * A THIRD observer for the reason the second one exists — observe() replaces the options of a
 	 * registration for the same node; ONE registration per host covers all four attributes since
 	 * none of this needs `subtree: true` on a different scope than `data-tab-active` already has. */
+	/* AND A WRITE THAT CHANGED NOTHING IS NOT A CHANGE — task freeze. Without this half the filter
+	 * above is a feedback loop that pins the main thread: the fitters `run()` calls re-apply their
+	 * classes on EVERY pass by design (fs-select.js's adoptMarkup, "additive only and cheap to
+	 * re-run every pass"), `classList.add()` of a token already present still WRITES the class
+	 * attribute, and a same-value attribute write still queues a mutation record — the trap
+	 * fs-chrome.js's `toggleAttribute` comment names for `setAttribute`. Land one of those on an
+	 * element carrying `data-field` and the guard above says yes, run() sweeps, the sweep writes
+	 * the same classes again, and nothing ever yields. `data-field` on a table cell is markup any
+	 * app may ship: luci-app-filemanager puts it on every `<th>`. Measured on owrt2512b,
+	 * /admin/system/filemanager, with every MutationObserver on the page instrumented
+	 * (`../tmp/task-freeze/mo-probe.mjs`): 391 callbacks in 432ms — 926 a second, capped only by
+	 * the probe's own budget — 3910 records, every one of them `class`, every one written from
+	 * inside the previous callback by `tagDataTables`/`adoptMarkup`/`fitTables`, and 2340 of them
+	 * on the same six `th[data-field]`. The tab never returns and the renderer sits at ~105% CPU
+	 * for as long as it is open (`tools/spa-parity.mjs`, `tools/floor-contract.mjs`). With the
+	 * check: 2 callbacks, 20 records, 0 of them reaching run(), and the same page answers in 4ms.
+	 *
+	 * The VALUE, not a flag and not `takeRecords()` after the sweep. A flag cannot work — delivery
+	 * is a microtask that runs after run() has returned — and draining the queue drops whatever an
+	 * external writer had queued and not yet been delivered for, which on a task that both refills
+	 * a section and re-runs `depends()` is a real hide this observer exists to catch. Comparing
+	 * `oldValue` against what the attribute reads NOW drops only writes that moved nothing, so a
+	 * real tab switch, a real fold and a real `depends()` row all still arrive: their values
+	 * change. `attributeOldValue` costs the engine a string per watched write and no layout. */
 	_moTabs = new MutationObserver((records) =>
-		records.some((r) => r.attributeName !== 'class' || r.target.dataset.field) && run());
+		records.some((r) => r.oldValue !== r.target.getAttribute(r.attributeName)
+			&& (r.attributeName !== 'class' || r.target.dataset.field)) && run());
 	for (const host of hosts)
-		_moTabs.observe(host, { attributes: true,
+		_moTabs.observe(host, { attributes: true, attributeOldValue: true,
 			attributeFilter: [ 'data-tab-active', 'hidden', 'aria-expanded', 'class' ], subtree: true });
 
 }

@@ -10,7 +10,7 @@
 #                                              qmi_backend)
 #   wwand-ncm        - NCM/ECM backend        (DEPENDS wwand)
 #   wwand-mhi        - PCIe/MHI transport + drivers (DEPENDS wwand; add a backend)
-#   wwand-esim       - eSIM management        (DEPENDS wwand-qmi + wwand-lpac)
+#   wwand-esim       - eSIM management        (DEPENDS wwand + lpac; no backend)
 # A typical QMI router installs `wwand-qmi` (which pulls in `wwand`); add
 # `wwand-mbim` / `wwand-ncm` for those modems, `wwand-mhi` for a PCIe/MHI modem.
 # The ucode tree ships PRECOMPILED to bytecode (repo-root CMakeLists.txt,
@@ -49,12 +49,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wwand
-PKG_VERSION:=1.6.6_p26
-PKG_RELEASE:=20
+PKG_VERSION:=1.6.6_p28
+PKG_RELEASE:=21
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/ddimension/wwand.git
-PKG_SOURCE_VERSION:=9325af024fbdacc50c4299c8344f584e3ae8fd73
+PKG_SOURCE_VERSION:=d96f723c751192fe18e5b173e84ac8254d08680a
 PKG_MIRROR_HASH:=skip
 
 PKG_LICENSE:=GPL-2.0-only
@@ -398,9 +398,18 @@ define Package/wwand-esim
   # lpac, or our self-contained static wwand-lpac (bundled wolfSSL+libcurl, no
   # OpenSSL/mbedtls .so — it PROVIDES lpac, so it satisfies +lpac too). lpac
   # drives the SM-DP+ download/notification (ES9+ HTTPS on the router); the
-  # daemon bridges its stdio APDU protocol inline. APDU access uses the modem
-  # UIM channel, so it also needs the QMI backend.
-  DEPENDS:=+wwand-qmi +lpac
+  # daemon bridges its stdio APDU protocol inline.
+  #
+  # NO BACKEND DEPENDENCY. This carried +wwand-qmi from the days when the QMI
+  # UIM logical channel was the only APDU transport. It is not any more: sim.uc
+  # probes native MBIM UICC -> QMI UIM -> AT (CCHO/CGLA), and all three live in
+  # the base package, so an NCM-only or MBIM-only box can manage profiles with
+  # no QMI backend installed at all. The stale dependency was not free — it made
+  # wwand-esim uninstallable wherever wwand-qmi's kmods do not exist as
+  # packages, e.g. a build whose QMI drivers are compiled in
+  # (ddimension/wwand#26). tools/check-packaging.py now fails on a DEPENDS that
+  # nothing imports, so the next one cannot sit unnoticed.
+  DEPENDS:=+wwand +lpac
 endef
 
 define Package/wwand-esim/description

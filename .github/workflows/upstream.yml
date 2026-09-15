@@ -107,7 +107,7 @@ jobs:
           (
           git_clone https://github.com/sirpdboy/luci-app-advancedplus
           git_clone https://github.com/sirpdboy/luci-app-taskplan taskplan && mvdir taskplan
-          git_clone https://github.com/sirpdboy/luci-app-lucky oplucky && mvdir oplucky
+          # git_clone https://github.com/sirpdboy/luci-app-lucky oplucky && mvdir oplucky
           git_clone https://github.com/sirpdboy/luci-app-partexp partexp && mvdir partexp
           git_clone https://github.com/sirpdboy/netspeedtest speedtest && mvdir speedtest
           git_clone https://github.com/sirpdboy/luci-app-parentcontrol
@@ -150,6 +150,7 @@ jobs:
           git_clone https://github.com/linkease/nas-packages-luci && mv -n nas-packages-luci/luci/* ./; rm -rf nas-packages-luci
           git_clone https://github.com/linkease/istore && mv -n istore/luci/* ./; rm -rf istore
           #git_clone https://github.com/linkease/lcdsimple lcdsimple1 && mvdir lcdsimple1
+          git_clone https://github.com/0x5826/openwrt-packages-extras 0x5826; rm -rf 0x5826/MAINTENANCE.md; mvdir 0x5826
           ) &
           (
           # git_clone https://github.com/frainzy1477/luci-app-clash
@@ -204,7 +205,7 @@ jobs:
           git_clone https://github.com/4IceG/luci-app-easyconfig-transfer easyconfig && mvdir easyconfig
           git_clone https://github.com/4IceG/luci-app-atcommands atcommands && mvdir atcommands
           git_clone https://github.com/wukongdaily/luci-app-run run1 && mvdir run1
-          git_clone https://github.com/itv3/homeproxy && mv -f homeproxy luci-app-homeproxy
+          git_clone https://github.com/szwjp/luci-app-homeproxy
           git_clone https://github.com/1andrevich/homeproxy-hiddify
           git_clone https://github.com/weicaixian86/luci-app-pingpacket
           ) &
@@ -230,6 +231,7 @@ jobs:
           git_clone https://github.com/linkease/istore-packages
           git clone https://github.com/laipeng668/luci-app-gecoosac gecoosac1 && mvdir gecoosac1
           git_clone https://github.com/eamonxg/luci-theme-shadcn
+          git_sparse_clone dashboard-redesign "https://github.com/eamonxg/luci" modules/luci-mod-dashboard
           ) &
           (
           git_clone https://github.com/muink/luci-app-dnsproxy
@@ -434,7 +436,96 @@ jobs:
           find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%'"|| true
           #find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -0 -t -n 1 git apply -p1 --recount --ignore-whitespace --unsafe-paths --verbose
       - name: Modify
-        run: "shopt -s extglob\nset +e\nsed -i \\\n-e \"s/\\(network\\..*\\)\\.ifname/\\1.device/g\" \\\n`find \\( -path \"*/root/*\" -o -path \"*/files/*\" -o -path \"*/luasrc/*\" \\) ! -path \"./base-files/*\" ! -path \"./dnsmasq/*\" ! -path \"./luci-base/*\" ! -path \"./ppp/*\" -type f` &\n# sed -i -e \"s/\\(killall .*\\)-[0-9] /\\1-3 /g\" \\\n-e \"s/killall \\([^-]+*\\)/killall -3 \\1/g\" \\\n`find \\( -path \"*/files/root/etc/init.d/*\" -o -path \"*/root/etc/init.d/*\" -o -path \"*/files/*.init\" \\) -type f` &\n(\nfunction latest() {\n  (curl -gs -H 'Content-Type: application/json' \\\n     -H \"Authorization: Bearer ${{ secrets.GH_TOKEN }}\" \\\n     -X POST -d '{ \"query\": \"query {repository(owner: \\\"'\"$1\"'\\\", name: \\\"'\"$2\"'\\\"){latestRelease{tagName tagCommit{oid}}refs(refPrefix:\\\"refs/tags/\\\",last:1,orderBy:{field:TAG_COMMIT_DATE,direction:ASC}){edges{node{name target{oid}}}}defaultBranchRef{target{...on Commit {oid}}}}}\"}' https://api.github.com/graphql)\n}\nfor pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|kaiplus|fastnet|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do\n  repo=\"$(grep ^PKG_SOURCE_URL $pkg | grep github | cut -f 4-5 -d '/' | sed -e 's/.git//' | grep -E '[0-9a-zA-Z_-]+$')\" || true\n  if [ \"$repo\" ]; then\n    owner=\"$(echo $repo | cut -f 1 -d '/')\"\n    name=\"$(echo $repo | cut -f 2 -d '/')\"\n    latest=\"$(latest $owner $name)\"\n    sed -i \"s/PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$(echo $latest | jq -r '.data.repository.defaultBranchRef.target.oid')/\" $pkg || true\n    over=\"$(grep -E PKG_VERSION:=.*$ $pkg | cut -f 2 -d '=' | sed -e 's/^\\(v\\|release-\\)//' | grep -E \"[0-9]\")\" || true\n    if [ \"$over\" ]; then\n      ver=\"$(echo $latest | jq -r '.data.repository.latestRelease.tagName' | sed -e 's/^\\(v\\|release-\\)//' | grep -E \"^[^()]*$\" | grep -E \"[0-9]\")\" || true\n      # [ \"$ver\" ] || ver=\"$(git ls-remote --tags git://github.com/$repo | cut -d/ -f3- | sort -t. -nk1,3 | awk '/^[^{]*$/{version=$1}END{print version}' | grep -o -E \"[0-9].*\")\" || true\n      echo \"$repo-$over-$ver\"\n      if [ \"$ver\" ]; then\n        function version_lt() { test \"$(echo \"$@\" | tr \" \" \"\\n\" | sort -rV | head -n 1)\" != \"$1\"; }\n        if version_lt \"$over\" \"$ver\"; then\n          latest=\"$(echo $latest | jq -r '.data.repository.latestRelease.tagCommit.oid' || echo $latest | jq -r '.data.repository.refs.edges[-1].node.target.oid')\"\n          sed -i -e \"s/PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$latest/\" \\\n                 -e \"s/PKG_VERSION:=.*/PKG_VERSION:=$ver/\" $pkg || true\n        fi || true\n      fi\n    fi\n  fi\ndone\ntouch /tmp/ok\n) &\n\n(\nfor pkg in $(ls -d */ | grep -v \"naiveproxy\" | grep -v \"luci-app-store\" | grep -v \"luci-app-quickstart\"); do\n  if [[ \"$(grep \"PKG_VERSION\" $pkg/Makefile)\" && ! \"$(grep \"PKG_RELEASE\" $pkg/Makefile)\" ]]; then\n    sed -i \"s/\\(PKG_VERSION:=.*\\)/\\1\\nPKG_RELEASE:=/\" $pkg/Makefile || true\n  fi\n  if [ \"$(grep \"PKG_RELEASE\" $pkg/Makefile)\" ]; then\n    sed -i \"s/PKG_RELEASE:=.*/PKG_RELEASE:=$(git rev-list --count main $pkg)/\" $pkg/Makefile || true\n  fi\n\ndone\ntouch /tmp/ok2\n) &\n\nsed -i \\\n  -e 's?include \\.\\./\\.\\./\\(lang\\|devel\\)?include $(TOPDIR)/feeds/packages/\\1?' \\\n  -e \"s/\\(\\(^\\| \\|\t\\)\\(PKG_HASH\\|PKG_MD5SUM\\|PKG_MIRROR_HASH\\|HASH\\):=\\).*/\\1skip/\" \\\n  -e 's?include .*/luci.mk?include $(TOPDIR)/feeds/luci/luci.mk?' \\\n  -e 's/+libpcre\\( \\|$\\)/+libpcre2 /' \\\n  */Makefile\nsed -i 's/+docker\\( \\|$\\)/+docker +dockerd /' luci-app-!(docker*)/Makefile\nsed -i \"s/192.168.0.1/10.0.0.1/g\" luci-app-onekeyap/{htdocs/luci-static/resources/view/network/onekeyap.js,root/usr/libexec/onekeyap,root/etc/config/onekeyap}\nsed -i \"s/2026.6.1/3026.6.1/g\" luci-app-passwall/luasrc/model/cbi/passwall/client/type/ray.lua\nsed -i \"s/2026.6.1/3026.6.1/g\" luci-app-passwall2/luasrc/model/cbi/passwall2/client/type/ray.lua\nchmod +x github/diy/*.sh\nbash .github/diy/create_acl_for_luci.sh -a >/dev/null 2>&1 || true\nbash .github/diy/convert_translation.sh -a >/dev/null 2>&1 || true\nbash .github/diy/create_ucitrack_for_luci.sh -a >/dev/null 2>&1 || true\nbash .github/diy/generate_ucitrack.sh -a >/dev/null 2>&1 || true\nchmod -R +x luci-*/root/etc/init.d/ luci-*/root/bin/ luci-*/root/sbin/ luci-*/root/usr/libexec/ luci-*/root/usr/bin/ luci-*/root/usr/sbin/\nfind . -path \"./luci-*/root/usr/share/*\" -name \"*.sh\" -type f -exec chmod +x {} \\;\n#sed -i 's?\"http://\" + window.location.hostname?window.location.protocol + \"//\" + window.location.hostname?g' `find luci-app*/luasrc/view/ -maxdepth 2 -name \"*.htm\"`\nsed -i \"s/default n/default y/\" dockerd/Config.in\nsed -i \"s/.tar.gz/.tar.xz/\" openwrt-natmap/Makefile\nmkdir -p luci-app-passwall/root/www/luci-static/passwall luci-app-passwall2/root/www/luci-static/passwall2 luci-app-ssr-plus/root/www/luci-static/shadowsocksr\ncp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-passwall/root/www/luci-static/passwall/\ncp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-passwall2/root/www/luci-static/passwall2/\ncp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-ssr-plus/root/www/luci-static/shadowsocksr/\necho \".page-container>div>div>a:first-child,.info_content>.status_box{display:none !important}\" >>luci-app-quickstart/htdocs/luci-static/quickstart/style.css\nsed -i -e \"s/body\\[theme=dark\\]/:root[data-darkmode=true]/g\" \\\n -e \"s/body\\[theme=light\\]/:root[data-darkmode=false]/g\" luci-app-quickstart/htdocs/luci-static/quickstart/style.css\nsed -i 's/body.getAttribute(\"theme\");if(o)switch(o){case\"dark\":case\"light\":return o}/documentElement.getAttribute(\"data-darkmode\");if(o)switch(o){case\"true\":return\"dark\";case\"false\":return\"light\"}/g' luci-app-quickstart/htdocs/luci-static/quickstart/index.js\nsed -i 's/icon!==\"baby\"/icon!==\"\"/' luci-app-quickstart/htdocs/luci-static/quickstart/index.js\nsed -i 's/+php8-cgi /+php8-cgi +php8-fpm /' luci-theme-spectra/Makefile \n\nwhile [[ ! -f /tmp/ok || ! -f /tmp/ok2 || ! -f /tmp/ok3 ]]; do\n    echo \"wait\"\n  sleep 1\ndone\n"
+        run: |
+          shopt -s extglob
+          set +e
+          sed -i \
+          -e "s/\(network\..*\)\.ifname/\1.device/g" \
+          `find \( -path "*/root/*" -o -path "*/files/*" -o -path "*/luasrc/*" \) ! -path "./base-files/*" ! -path "./dnsmasq/*" ! -path "./luci-base/*" ! -path "./ppp/*" -type f` &
+          # sed -i -e "s/\(killall .*\)-[0-9] /\1-3 /g" \
+          -e "s/killall \([^-]+*\)/killall -3 \1/g" \
+          `find \( -path "*/files/root/etc/init.d/*" -o -path "*/root/etc/init.d/*" -o -path "*/files/*.init" \) -type f` &
+          (
+          function latest() {
+            (curl -gs -H 'Content-Type: application/json' \
+               -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+               -X POST -d '{ "query": "query {repository(owner: \"'"$1"'\", name: \"'"$2"'\"){latestRelease{tagName tagCommit{oid}}refs(refPrefix:\"refs/tags/\",last:1,orderBy:{field:TAG_COMMIT_DATE,direction:ASC}){edges{node{name target{oid}}}}defaultBranchRef{target{...on Commit {oid}}}}}"}' https://api.github.com/graphql)
+          }
+          for pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|sing-box|kaiplus|fastnet|torrserver|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do
+            repo="$(grep ^PKG_SOURCE_URL $pkg | grep github | cut -f 4-5 -d '/' | sed -e 's/.git//' | grep -E '[0-9a-zA-Z_-]+$')" || true
+            if [ "$repo" ]; then
+              owner="$(echo $repo | cut -f 1 -d '/')"
+              name="$(echo $repo | cut -f 2 -d '/')"
+              latest="$(latest $owner $name)"
+              sed -i "s/PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$(echo $latest | jq -r '.data.repository.defaultBranchRef.target.oid')/" $pkg || true
+              over="$(grep -E PKG_VERSION:=.*$ $pkg | cut -f 2 -d '=' | sed -e 's/^\(v\|release-\)//' | grep -E "[0-9]")" || true
+              if [ "$over" ]; then
+                ver="$(echo $latest | jq -r '.data.repository.latestRelease.tagName' | sed -e 's/^\(v\|release-\)//' | grep -E "^[^()]*$" | grep -E "[0-9]")" || true
+                # [ "$ver" ] || ver="$(git ls-remote --tags git://github.com/$repo | cut -d/ -f3- | sort -t. -nk1,3 | awk '/^[^{]*$/{version=$1}END{print version}' | grep -o -E "[0-9].*")" || true
+                echo "$repo-$over-$ver"
+                if [ "$ver" ]; then
+                  function version_lt() { test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" != "$1"; }
+                  if version_lt "$over" "$ver"; then
+                    latest="$(echo $latest | jq -r '.data.repository.latestRelease.tagCommit.oid' || echo $latest | jq -r '.data.repository.refs.edges[-1].node.target.oid')"
+                    sed -i -e "s/PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$latest/" \
+                           -e "s/PKG_VERSION:=.*/PKG_VERSION:=$ver/" $pkg || true
+                  fi || true
+                fi
+              fi
+            fi
+          done
+          touch /tmp/ok
+          ) &
+
+          (
+          for pkg in $(ls -d */ | grep -v "naiveproxy" | grep -v "luci-app-store" | grep -v "luci-app-quickstart"); do
+            if [[ "$(grep "PKG_VERSION" $pkg/Makefile)" && ! "$(grep "PKG_RELEASE" $pkg/Makefile)" ]]; then
+              sed -i "s/\(PKG_VERSION:=.*\)/\1\nPKG_RELEASE:=/" $pkg/Makefile || true
+            fi
+            if [ "$(grep "PKG_RELEASE" $pkg/Makefile)" ]; then
+              sed -i "s/PKG_RELEASE:=.*/PKG_RELEASE:=$(git rev-list --count main $pkg)/" $pkg/Makefile || true
+            fi
+
+          done
+          touch /tmp/ok2
+          ) &
+
+          sed -i \
+            -e 's?include \.\./\.\./\(lang\|devel\)?include $(TOPDIR)/feeds/packages/\1?' \
+            -e "s/\(\(^\| \|	\)\(PKG_HASH\|PKG_MD5SUM\|PKG_MIRROR_HASH\|HASH\):=\).*/\1skip/" \
+            -e 's?include .*/luci.mk?include $(TOPDIR)/feeds/luci/luci.mk?' \
+            -e 's/+libpcre\( \|$\)/+libpcre2 /' \
+            */Makefile
+          sed -i 's/+docker\( \|$\)/+docker +dockerd /' luci-app-!(docker*)/Makefile
+          sed -i "s/192.168.0.1/10.0.0.1/g" luci-app-onekeyap/{htdocs/luci-static/resources/view/network/onekeyap.js,root/usr/libexec/onekeyap,root/etc/config/onekeyap}
+          sed -i "s/2026.6.1/3026.6.1/g" luci-app-passwall/luasrc/model/cbi/passwall/client/type/ray.lua
+          sed -i "s/2026.6.1/3026.6.1/g" luci-app-passwall2/luasrc/model/cbi/passwall2/client/type/ray.lua
+          chmod +x github/diy/*.sh
+          bash .github/diy/create_acl_for_luci.sh -a >/dev/null 2>&1 || true
+          bash .github/diy/convert_translation.sh -a >/dev/null 2>&1 || true
+          bash .github/diy/create_ucitrack_for_luci.sh -a >/dev/null 2>&1 || true
+          bash .github/diy/generate_ucitrack.sh -a >/dev/null 2>&1 || true
+          chmod -R +x luci-*/root/etc/init.d/ luci-*/root/bin/ luci-*/root/sbin/ luci-*/root/usr/libexec/ luci-*/root/usr/bin/ luci-*/root/usr/sbin/
+          find . -path "./luci-*/root/usr/share/*" -name "*.sh" -type f -exec chmod +x {} \;
+          #sed -i 's?"http://" + window.location.hostname?window.location.protocol + "//" + window.location.hostname?g' `find luci-app*/luasrc/view/ -maxdepth 2 -name "*.htm"`
+          sed -i "s/default n/default y/" dockerd/Config.in
+          sed -i "s/.tar.gz/.tar.xz/" openwrt-natmap/Makefile
+          mkdir -p luci-app-passwall/root/www/luci-static/passwall luci-app-passwall2/root/www/luci-static/passwall2 luci-app-ssr-plus/root/www/luci-static/shadowsocksr
+          cp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-passwall/root/www/luci-static/passwall/
+          cp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-passwall2/root/www/luci-static/passwall2/
+          cp -rf luci-app-bypass/root/www/luci-static/bypass/* luci-app-ssr-plus/root/www/luci-static/shadowsocksr/
+          echo ".page-container>div>div>a:first-child,.info_content>.status_box{display:none !important}" >>luci-app-quickstart/htdocs/luci-static/quickstart/style.css
+          sed -i -e "s/body\[theme=dark\]/:root[data-darkmode=true]/g" \
+           -e "s/body\[theme=light\]/:root[data-darkmode=false]/g" luci-app-quickstart/htdocs/luci-static/quickstart/style.css
+          sed -i 's/body.getAttribute("theme");if(o)switch(o){case"dark":case"light":return o}/documentElement.getAttribute("data-darkmode");if(o)switch(o){case"true":return"dark";case"false":return"light"}/g' luci-app-quickstart/htdocs/luci-static/quickstart/index.js
+          sed -i 's/icon!=="baby"/icon!==""/' luci-app-quickstart/htdocs/luci-static/quickstart/index.js
+          sed -i 's/+php8-cgi /+php8-cgi +php8-fpm /' luci-theme-spectra/Makefile
+          sed -i 's/+luci-base/+luci-base +luci-app-oui/' luci-mod-status/Makefile
+
+          while [[ ! -f /tmp/ok || ! -f /tmp/ok2 || ! -f /tmp/ok3 ]]; do
+              echo "wait"
+            sleep 1
+          done
       - name: Apply
         run: "Emoji=(\"\U0001F389\" \"\U0001F91E\" \"✨\" \"\U0001F381\" \"\U0001F388\" \"\U0001F384\" \"\U0001F3A8\" \"\U0001F48B\" \"\U0001F353\" \"\U0001F355\" \"\U0001F349\" \"\U0001F490\" \"\U0001F334\" \"\U0001F680\" \"\U0001F6F8\" \"\U0001F5FD\" \"⛅\" \"\U0001F308\" \"\U0001F525\" \"⛄\" \"\U0001F436\" \"\U0001F3C5\" \"\U0001F984\" \"\U0001F424\")\ngit add .\ngit commit -m \"${Emoji[$[$RANDOM % ${#Emoji[@]}]]} Sync $(date +%Y-%m-%d\" \"%H:%M:%S)\"\nfor pkg in $(git diff-tree --no-commit-id --name-only HEAD | grep -v \"naiveproxy\" | grep -v \"luci-app-store\" | grep -v \"luci-app-quickstart\"); do\n  if [ \"$(grep \"PKG_RELEASE\" $pkg/Makefile)\" ]; then\n    sed -i \"s/PKG_RELEASE:=.*/PKG_RELEASE:=$(git rev-list --count main $pkg)/\" $pkg/Makefile || true\n  fi\ndone\ngit reset --soft HEAD^\ngit add .\ngit commit -m \"${Emoji[$[$RANDOM % ${#Emoji[@]}]]} Sync $(date +%Y-%m-%d\" \"%H:%M:%S)\"\ngit push -f\n"
       - name: Delete workflow runs

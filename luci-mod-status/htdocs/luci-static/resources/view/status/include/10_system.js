@@ -34,7 +34,7 @@ var callCPUInfo = rpc.declare({
 	method: 'getCPUInfo'
 });
 
-var callTempInfo = rpc.declare({
+var callCPUUsage = rpc.declare({
 	object: 'luci',
 	method: 'getTempInfo'
 });
@@ -61,7 +61,7 @@ return baseclass.extend({
 		    systeminfo  = data[1],
 		    cpubench    = data[2],
 		    cpuinfo     = data[3],
-			tempinfo    = data[4],
+		    cpuusage    = data[4],
 		    luciversion = data[5],
 		    unixtime    = data[6];
 
@@ -88,6 +88,11 @@ return baseclass.extend({
 			_('Architecture'),     (cpuinfo.cpuinfo || boardinfo.system) + ' ' + cpubench.cpubench,
 			_('Target Platform'),  (L.isObject(boardinfo.release) ? boardinfo.release.target : ''),
 			_('Firmware Version'), (L.isObject(boardinfo.release) ? boardinfo.release.description + ' / ' : '') + (luciversion || ''),
+				? '%s%s / '.format(
+					boardinfo.release.description || '',
+					boardinfo.release.revision ? boardinfo.release.revision : ''
+				)
+				: '') + (luciversion || ''),
 			_('Kernel Version'),   boardinfo.kernel,
 			_('Local Time'),       datestr,
 			_('Uptime'),           systeminfo.uptime ? '%t'.format(systeminfo.uptime) : null,
@@ -98,7 +103,7 @@ return baseclass.extend({
 			) : null
 		];
 
-		if (tempinfo.tempinfo) {
+		if (cpuusage.tempinfo) {
 			fields.splice(6, 0, _('Temperature'));
 			fields.splice(7, 0, tempinfo.tempinfo);
 		}

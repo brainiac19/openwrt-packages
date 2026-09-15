@@ -36,7 +36,7 @@ return baseclass.extend({
 			available = Math.min(mem.total ?? Infinity, Math.max(0, available + (mem.buffered || 0)));
 
 		var fields = [
-			_('Total Available'), available, mem.total,
+			_('Used'), (mem.total && mem.available) ? (mem.total - available): null, mem.total,
 		];
 
 		if (mem.cached)

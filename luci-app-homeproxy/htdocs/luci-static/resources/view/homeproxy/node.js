@@ -6,112 +6,17 @@
 
 'use strict';
 'require form';
-'require rpc';
+'require fs';
 'require uci';
 'require ui';
 'require view';
 
 'require homeproxy as hp';
-'require homeproxy.diagnostics as hpDiagnostics';
-'require homeproxy.tcping as hpTcping';
 'require tools.widgets as widgets';
-
-const callNodeReferences = rpc.declare({
-	object: 'luci.homeproxy_node_tools',
-	method: 'node_references',
-	params: [ 'node_id' ],
-	expect: { '': {} }
-});
-const callRemoveSubscriptionNodes = rpc.declare({
-	object: 'luci.homeproxy_node_tools',
-	method: 'remove_subscription_nodes',
-	params: [ 'node_ids' ],
-	expect: { '': {} }
-});
-const callUpdateSubscriptions = rpc.declare({
-	object: 'luci.homeproxy_node_tools',
-	method: 'update_subscriptions',
-	expect: { '': {} }
-});
-const callUpdateSubscriptionsStatus = rpc.declare({
-	object: 'luci.homeproxy_node_tools',
-	method: 'update_subscriptions_status',
-	expect: { '': {} }
-});
-
-const SUBSCRIPTION_UPDATE_POLL_INTERVAL = 1000;
-const SUBSCRIPTION_UPDATE_POLL_LIMIT = 180;
-
-function subscriptionRpcErrorMessage(err, fallback) {
-	let message = err?.message || err;
-
-	if (message != null)
-		message = String(message);
-
-	if (!message || message === 'Unknown error.' || message === '未知错误。')
-		message = fallback;
-
-	let lower = (message || '').toLowerCase();
-	if (lower.includes('access denied') ||
-		lower.includes('permission denied') ||
-		lower.includes('ubus') ||
-		lower.includes('rpc') ||
-		lower.includes('session')) {
-		return _('HomeProxy was just upgraded or rpcd has restarted. The current page session may be expired. Refresh the page or sign in again before retrying.');
-	}
-
-	return message || fallback;
-}
 
 function allowInsecureConfirm(ev, _section_id, value) {
 	if (value === '1' && !confirm(_('Are you sure to allow insecure?')))
 		ev.target.firstElementChild.checked = null;
-}
-
-function showNodeReferenceNotice(section_id) {
-	return L.resolveDefault(callNodeReferences(section_id), { result: false, error: _('Unknown error.') }).then((res) => {
-		if (!res.result) {
-			ui.addNotification(null, E('p', res.error || _('Failed to check node references. Please try again later.')), 'warning');
-			return true;
-		}
-
-		let refs = res.references || [];
-		if (!refs.length)
-			return false;
-
-		let label = uci.get('homeproxy', section_id, 'label') || section_id;
-		ui.addNotification(null, E('div', [
-			E('p', _('Node %s is still referenced by these settings. Remove the references before deleting the node.').format(label)),
-			E('ul', refs.map((ref) => E('li', ref?.label || ref?.scope || '')))
-		]), 'warning');
-
-		return true;
-	}).catch((err) => {
-		ui.addNotification(null, E('p', _('Failed to check node references. Please try again later.')), 'warning');
-		return true;
-	});
-}
-
-function wait(ms) {
-	return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function pollSubscriptionUpdateStatus(attempt) {
-	return callUpdateSubscriptionsStatus().catch((err) => {
-		throw new Error(subscriptionRpcErrorMessage(err, _('Failed to read subscription update status.')));
-	}).then((res) => {
-		if (!res.result)
-			throw new Error(res.error || _('Failed to read subscription update status.'));
-
-		if (!res.completed) {
-			if (attempt >= SUBSCRIPTION_UPDATE_POLL_LIMIT)
-				throw new Error(_('Timed out waiting for subscription update to finish.'));
-
-			return wait(SUBSCRIPTION_UPDATE_POLL_INTERVAL).then(() => pollSubscriptionUpdateStatus(attempt + 1));
-		}
-
-		return res;
-	});
 }
 
 function parseShareLink(uri, features) {
@@ -205,6 +110,26 @@ function parseShareLink(uri, features) {
 				tls: '1',
 				tls_sni: params.get('sni'),
 				tls_insecure: params.get('insecure') ? '1' : '0'
+			};
+
+			break;
+		case 'snell':
+			/* Surge Snell share link: snell://host:port?psk=..&obfs=http&obfs-host=..#name */
+			url = new URL('http://' + uri[1]);
+			params = url.searchParams;
+
+			config = {
+				label: url.hash ? decodeURIComponent(url.hash.slice(1)) : null,
+				type: 'snell',
+				address: url.hostname,
+				port: url.port || '80',
+				password: url.username ? decodeURIComponent(url.username)
+					: (params.get('psk') ? decodeURIComponent(params.get('psk')) : null),
+				snell_version: params.get('version') || '4',
+				snell_userkey: params.get('userkey'),
+				snell_obfs_mode: (params.get('obfs') === 'http') ? 'http' : null,
+				snell_obfs_host: params.get('obfs-host'),
+				snell_reuse: (params.get('reuse') === '1') ? '1' : '0'
 			};
 
 			break;
@@ -550,27 +475,6 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends({'type': 'direct', '!reverse': true});
 	o.rmempty = false;
 
-	o = s.option(form.DummyValue, '_tcping_delay', '延迟');
-	o.editable = true;
-	o.rmempty = true;
-	o.renderWidget = function(section_id) {
-		hpTcping.ensureStyle();
-		return E('span', {
-			id: hpTcping.nodeId(section_id),
-			class: 'homeproxy-node-tcping homeproxy-latency-pill',
-			role: 'button',
-			tabindex: '0',
-			title: '点击测速',
-			click: (ev) => hpTcping.runNode(section_id, ev),
-			keydown: (ev) => {
-				if (ev.key === 'Enter' || ev.key === ' ') {
-					ev.preventDefault();
-					return hpTcping.runNode(section_id, ev);
-				}
-			}
-		}, '-');
-	}
-
 	o = s.option(form.Value, 'username', _('Username'));
 	o.depends('type', 'http');
 	o.depends('type', 'socks');
@@ -583,6 +487,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends('type', 'http');
 	o.depends('type', 'hysteria2');
 	o.depends('type', 'shadowsocks');
+	o.depends('type', 'snell');
 	o.depends('type', 'ssh');
 	o.depends('type', 'trojan');
 	o.depends('type', 'tuic');
@@ -592,7 +497,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.validate = function(section_id, value) {
 		if (section_id) {
 			let type = this.section.formvalue(section_id, 'type');
-			let required_type = [ 'anytls', 'shadowsocks', 'shadowtls', 'trojan' ];
+			let required_type = [ 'anytls', 'shadowsocks', 'shadowtls', 'snell', 'trojan' ];
 
 			if (required_type.includes(type)) {
 				if (type === 'shadowsocks') {
@@ -656,6 +561,13 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends({'type': 'hysteria2', 'hysteria_hopping_port': /[\s\S]/});
 	o.modalonly = true;
 
+	o = s.option(form.Value, 'hysteria_hop_interval_max', _('Max hop interval (1.14)'),
+		_('Maximum port hopping interval in seconds; the actual interval is randomized between the two values. Hysteria2 only.'));
+	o.datatype = 'uinteger';
+	o.placeholder = '300';
+	o.depends({'type': 'hysteria2', 'hysteria_hopping_port': /[\s\S]/});
+	o.modalonly = true;
+
 	o = s.option(form.ListValue, 'hysteria_protocol', _('Protocol'));
 	o.value('udp');
 	/* WeChat-Video / FakeTCP are unsupported by sing-box currently
@@ -683,6 +595,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o = s.option(form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
 	o.value('', _('Disable'));
 	o.value('salamander', _('Salamander'));
+	o.value('gecko', _('Gecko (1.14)'));
 	o.depends('type', 'hysteria2');
 	o.modalonly = true;
 
@@ -690,6 +603,20 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.password = true;
 	o.depends('type', 'hysteria');
 	o.depends({'type': 'hysteria2', 'hysteria_obfs_type': /[\s\S]/});
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'hysteria_obfs_min_packet_size', _('Min obfs packet size (1.14)'),
+		_('Minimum on-wire packet size in bytes. Gecko only.'));
+	o.datatype = 'uinteger';
+	o.placeholder = '512';
+	o.depends({'type': 'hysteria2', 'hysteria_obfs_type': 'gecko'});
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'hysteria_obfs_max_packet_size', _('Max obfs packet size (1.14)'),
+		_('Maximum on-wire packet size in bytes. Gecko only.'));
+	o.datatype = 'uinteger';
+	o.placeholder = '1200';
+	o.depends({'type': 'hysteria2', 'hysteria_obfs_type': 'gecko'});
 	o.modalonly = true;
 
 	o = s.option(form.Value, 'hysteria_down_mbps', _('Max download speed'),
@@ -706,21 +633,17 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends('type', 'hysteria2');
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'hysteria_recv_window_conn', _('QUIC stream receive window'),
-		_('The QUIC stream-level flow control window for receiving data.'));
-	o.datatype = 'uinteger';
-	o.depends('type', 'hysteria');
+	o = s.option(form.ListValue, 'hysteria_bbr_profile', _('BBR profile (1.14)'),
+		_('BBR congestion control algorithm profile. Hysteria2 only.'));
+	o.value('', _('Standard (default)'));
+	o.value('conservative', _('Conservative'));
+	o.value('aggressive', _('Aggressive'));
+	o.depends('type', 'hysteria2');
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'hysteria_revc_window', _('QUIC connection receive window'),
-		_('The QUIC connection-level flow control window for receiving data.'));
-	o.datatype = 'uinteger';
-	o.depends('type', 'hysteria');
-	o.modalonly = true;
-
-	o = s.option(form.Flag, 'hysteria_disable_mtu_discovery', _('Disable Path MTU discovery'),
-		_('Disables Path MTU Discovery (RFC 8899). Packets will then be at most 1252 (IPv4) / 1232 (IPv6) bytes in size.'));
-	o.depends('type', 'hysteria');
+	o = s.option(form.Flag, 'hysteria_disable_chrome_parrot', _('Disable Chrome QUIC fingerprint (1.14)'),
+		_('Disable Chrome QUIC handshake parroting, which is enabled by default since sing-box 1.14. Turn this on only when the server uses an Ed25519 certificate or the handshake otherwise fails.'));
+	o.depends('type', 'hysteria2');
 	o.modalonly = true;
 	/* Hysteria (2) config end */
 
@@ -754,69 +677,6 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends('shadowsocks_plugin', 'obfs-local');
 	o.depends('shadowsocks_plugin', 'v2ray-plugin');
 	o.modalonly = true;
-
-	o = s.option(form.Flag, 'shadowtls_enabled', _('Enable ShadowTLS'));
-	o.depends('type', 'shadowsocks');
-	o.rmempty = false;
-	o.load = function(section_id) {
-		let enabled = uci.get(data[0], section_id, 'shadowtls_enabled');
-		if (enabled != null)
-			return enabled;
-
-		return uci.get(data[0], section_id, 'shadowtls_address') ? '1' : '0';
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_address', _('ShadowTLS address'));
-	o.datatype = 'host';
-	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
-	o.validate = function(section_id, value) {
-		if (section_id) {
-			let type = this.section.formvalue(section_id, 'type');
-			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
-			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('Cannot be empty');
-		}
-
-		return true;
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_port', _('ShadowTLS port'));
-	o.datatype = 'port';
-	o.placeholder = '443';
-	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
-	o.validate = function(section_id, value) {
-		if (section_id) {
-			let type = this.section.formvalue(section_id, 'type');
-			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
-			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('Cannot be empty');
-		}
-
-		return true;
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_password', _('ShadowTLS password'));
-	o.password = true;
-	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
-	o.validate = function(section_id, value) {
-		if (section_id) {
-			let type = this.section.formvalue(section_id, 'type');
-			let enabled = this.section.formvalue(section_id, 'shadowtls_enabled');
-			if (type === 'shadowsocks' && enabled === '1' && !value)
-				return _('Cannot be empty');
-		}
-
-		return true;
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'shadowtls_sni', _('ShadowTLS masquerade SNI'));
-	o.datatype = 'hostname';
-	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
-	o.modalonly = true;
 	/* Shadowsocks config end */
 
 	/* ShadowTLS config */
@@ -826,7 +686,6 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.value('3', _('v3'));
 	o.default = '1';
 	o.depends('type', 'shadowtls');
-	o.depends({'type': 'shadowsocks', 'shadowtls_enabled': '1'});
 	o.rmempty = false;
 	o.modalonly = true;
 
@@ -950,126 +809,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	/* VMess config end */
 
 	/* Transport config start */
-	o = s.option(form.ListValue, 'transport', _('Transport'),
-		_('No TCP transport, plain HTTP is merged into the HTTP transport.'));
-	o.value('', _('None'));
-	o.value('grpc', _('gRPC'));
-	o.value('http', _('HTTP'));
-	o.value('httpupgrade', _('HTTPUpgrade'));
-	o.value('quic', _('QUIC'));
-	o.value('ws', _('WebSocket'));
-	o.depends('type', 'trojan');
-	o.depends('type', 'vless');
-	o.depends('type', 'vmess');
-	o.onchange = function(ev, section_id, value) {
-		let desc = this.map.findElement('id', 'cbid.homeproxy.%s.transport'.format(section_id)).nextElementSibling;
-		if (value === 'http')
-			desc.innerHTML = _('TLS is not enforced. If TLS is not configured, plain HTTP 1.1 is used.');
-		else if (value === 'quic')
-			desc.innerHTML = _('No additional encryption support: It\'s basically duplicate encryption.');
-		else
-			desc.innerHTML = _('No TCP transport, plain HTTP is merged into the HTTP transport.');
-
-		let tls = this.map.findElement('id', 'cbid.homeproxy.%s.tls'.format(section_id)).firstElementChild;
-		if ((value === 'http' && tls.checked) || (value === 'grpc' && !features.with_grpc)) {
-			this.map.findElement('id', 'cbid.homeproxy.%s.http_idle_timeout'.format(section_id)).nextElementSibling.innerHTML =
-				_('Specifies the period of time (in seconds) after which a health check will be performed using a ping frame if no frames have been received on the connection.<br/>' +
-					'Please note that a ping response is considered a received frame, so if there is no other traffic on the connection, the health check will be executed every interval.');
-
-			this.map.findElement('id', 'cbid.homeproxy.%s.http_ping_timeout'.format(section_id)).nextElementSibling.innerHTML =
-				_('Specifies the timeout duration (in seconds) after sending a PING frame, within which a response must be received.<br/>' +
-					'If a response to the PING frame is not received within the specified timeout duration, the connection will be closed.');
-		} else if (value === 'grpc' && features.with_grpc) {
-			this.map.findElement('id', 'cbid.homeproxy.%s.http_idle_timeout'.format(section_id)).nextElementSibling.innerHTML =
-				_('If the transport doesn\'t see any activity after a duration of this time (in seconds), it pings the client to check if the connection is still active.');
-
-			this.map.findElement('id', 'cbid.homeproxy.%s.http_ping_timeout'.format(section_id)).nextElementSibling.innerHTML =
-				_('The timeout (in seconds) that after performing a keepalive check, the client will wait for activity. If no activity is detected, the connection will be closed.');
-		}
-	}
-	o.modalonly = true;
-
-	/* gRPC config start */
-	o = s.option(form.Value, 'grpc_servicename', _('gRPC service name'));
-	o.depends('transport', 'grpc');
-	o.modalonly = true;
-
-	if (features.with_grpc) {
-		o = s.option(form.Flag, 'grpc_permit_without_stream', _('gRPC permit without stream'),
-			_('If enabled, the client transport sends keepalive pings even with no active connections.'));
-		o.depends('transport', 'grpc');
-		o.modalonly = true;
-	}
-	/* gRPC config end */
-
-	/* HTTP(Upgrade) config start */
-	o = s.option(form.DynamicList, 'http_host', _('Host'));
-	o.datatype = 'hostname';
-	o.depends('transport', 'http');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'httpupgrade_host', _('Host'));
-	o.datatype = 'hostname';
-	o.depends('transport', 'httpupgrade');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'http_path', _('Path'));
-	o.depends('transport', 'http');
-	o.depends('transport', 'httpupgrade');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'http_method', _('Method'));
-	o.value('GET', _('GET'));
-	o.value('PUT', _('PUT'));
-	o.depends('transport', 'http');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'http_idle_timeout', _('Idle timeout'),
-		_('Specifies the period of time (in seconds) after which a health check will be performed using a ping frame if no frames have been received on the connection.<br/>' +
-			'Please note that a ping response is considered a received frame, so if there is no other traffic on the connection, the health check will be executed every interval.'));
-	o.datatype = 'uinteger';
-	o.depends('transport', 'grpc');
-	o.depends({'transport': 'http', 'tls': '1'});
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'http_ping_timeout', _('Ping timeout'),
-		_('Specifies the timeout duration (in seconds) after sending a PING frame, within which a response must be received.<br/>' +
-			'If a response to the PING frame is not received within the specified timeout duration, the connection will be closed.'));
-	o.datatype = 'uinteger';
-	o.depends('transport', 'grpc');
-	o.depends({'transport': 'http', 'tls': '1'});
-	o.modalonly = true;
-	/* HTTP config end */
-
-	/* WebSocket config start */
-	o = s.option(form.Value, 'ws_host', _('Host'));
-	o.depends('transport', 'ws');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'ws_path', _('Path'));
-	o.depends('transport', 'ws');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'websocket_early_data', _('Early data'),
-		_('Allowed payload size is in the request.'));
-	o.datatype = 'uinteger';
-	o.value('2048');
-	o.depends('transport', 'ws');
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'websocket_early_data_header', _('Early data header name'));
-	o.value('Sec-WebSocket-Protocol');
-	o.depends('transport', 'ws');
-	o.modalonly = true;
-	/* WebSocket config end */
-
-	o = s.option(form.ListValue, 'packet_encoding', _('Packet encoding'));
-	o.value('', _('none'));
-	o.value('packetaddr', _('packet addr (v2ray-core v5+)'));
-	o.value('xudp', _('Xudp (Xray-core)'));
-	o.depends('type', 'vless');
-	o.depends('type', 'vmess');
-	o.modalonly = true;
+	hp.renderTransportOptions(s, { features: features, side: 'client' });
 	/* Transport config end */
 
 	/* Wireguard config start */
@@ -1179,75 +919,53 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.modalonly = true;
 	/* Mux config end */
 
+	/* Snell config start */
+	o = s.option(form.ListValue, 'snell_version', _('Snell version'),
+		_('sing-box implements Snell v4/v5 wire as v4 and v6. The pre-shared key (Password above) must be 12-255 bytes for v6.'));
+	o.value('4', _('v4'));
+	o.value('6', _('v6'));
+	o.default = '4';
+	o.depends('type', 'snell');
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'snell_userkey', _('User key'),
+		_('Optional; only required when connecting to a multi-user Snell server.'));
+	o.depends('type', 'snell');
+	o.modalonly = true;
+
+	o = s.option(form.Flag, 'snell_reuse', _('Connection reuse'),
+		_('Enable connection reuse (the Snell v2 CONNECT command).'));
+	o.depends('type', 'snell');
+	o.modalonly = true;
+
+	o = s.option(form.ListValue, 'snell_obfs_mode', _('Obfuscation mode'),
+		_('HTTP obfuscation. v4 only.'));
+	o.value('', _('none'));
+	o.value('http', _('http'));
+	o.depends({'type': 'snell', 'snell_version': '4'});
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'snell_obfs_host', _('Obfuscation host'),
+		_('HTTP Host header sent when obfuscation mode is http. bing.com is used by default.'));
+	o.depends({'type': 'snell', 'snell_version': '4', 'snell_obfs_mode': 'http'});
+	o.modalonly = true;
+
+	o = s.option(form.ListValue, 'snell_mode', _('Traffic shaping mode'),
+		_('v6 only.'));
+	o.value('', _('default'));
+	o.value('unshaped', _('unshaped'));
+	o.value('unsafe-raw', _('unsafe-raw'));
+	o.depends({'type': 'snell', 'snell_version': '6'});
+	o.modalonly = true;
+	/* Snell config end */
+
 	/* TLS config start */
-	o = s.option(form.Flag, 'tls', _('TLS'));
-	o.depends('type', 'anytls');
-	o.depends('type', 'http');
-	o.depends('type', 'hysteria');
-	o.depends('type', 'hysteria2');
-	o.depends('type', 'shadowtls');
-	o.depends('type', 'trojan');
-	o.depends('type', 'tuic');
-	o.depends('type', 'vless');
-	o.depends('type', 'vmess');
-	o.validate = function(section_id, _value) {
-		if (section_id) {
-			let type = this.map.lookupOption('type', section_id)[0].formvalue(section_id);
-			let tls = this.map.findElement('id', 'cbid.homeproxy.%s.tls'.format(section_id)).firstElementChild;
-
-			if (['anytls', 'hysteria', 'hysteria2', 'shadowtls', 'tuic'].includes(type)) {
-				tls.checked = true;
-				tls.disabled = true;
-			} else {
-				tls.disabled = null;
-			}
-		}
-
-		return true;
-	}
-	o.modalonly = true;
-
-	o = s.option(form.Value, 'tls_sni', _('TLS SNI'),
-		_('Used to verify the hostname on the returned certificates unless insecure is given.'));
-	o.depends('tls', '1');
-	o.modalonly = true;
-
-	o = s.option(form.DynamicList, 'tls_alpn', _('TLS ALPN'),
-		_('List of supported application level protocols, in order of preference.'));
-	o.depends('tls', '1');
-	o.modalonly = true;
-
-	o = s.option(form.Flag, 'tls_insecure', _('Allow insecure'),
-		_('Allow insecure connection at TLS client.') +
-		'<br/>' +
-		_('This is <strong>DANGEROUS</strong>, your traffic is almost like <strong>PLAIN TEXT</strong>! Use at your own risk!'));
-	o.depends('tls', '1');
-	o.onchange = allowInsecureConfirm;
-	o.modalonly = true;
-
-	o = s.option(form.ListValue, 'tls_min_version', _('Minimum TLS version'),
-		_('The minimum TLS version that is acceptable.'));
-	o.value('', _('default'));
-	for (let i of hp.tls_versions)
-		o.value(i);
-	o.depends('tls', '1');
-	o.modalonly = true;
-
-	o = s.option(form.ListValue, 'tls_max_version', _('Maximum TLS version'),
-		_('The maximum TLS version that is acceptable.'));
-	o.value('', _('default'));
-	for (let i of hp.tls_versions)
-		o.value(i);
-	o.depends('tls', '1');
-	o.modalonly = true;
-
-	o = s.option(hp.CBIStaticList, 'tls_cipher_suites', _('Cipher suites'),
-		_('The elliptic curves that will be used in an ECDHE handshake, in preference order. If empty, the default will be used.'));
-	for (let i of hp.tls_cipher_suites)
-		o.value(i);
-	o.depends('tls', '1');
-	o.optional = true;
-	o.modalonly = true;
+	hp.renderTlsOptions(s, {
+		side: 'client',
+		type_depends: [ 'anytls', 'http', 'hysteria', 'hysteria2', 'shadowtls', 'trojan', 'tuic', 'vless', 'vmess' ],
+		tls_forced_types: [ 'anytls', 'hysteria', 'hysteria2', 'shadowtls', 'tuic' ],
+		oninsecurechange: allowInsecureConfirm
+	});
 
 	o = s.option(form.Flag, 'tls_self_sign', _('Append self-signed certificate'),
 		_('If you have the root certificate, use this option instead of allowing insecure.'));
@@ -1369,8 +1087,7 @@ return view.extend({
 	load() {
 		return Promise.all([
 			uci.load('homeproxy'),
-			hp.getBuiltinFeatures(),
-			hpDiagnostics.load()
+			hp.getBuiltinFeatures()
 		]);
 	},
 
@@ -1379,7 +1096,6 @@ return view.extend({
 		let main_node = uci.get(data[0], 'config', 'main_node');
 		let routing_mode = uci.get(data[0], 'config', 'routing_mode');
 		let features = data[1];
-		hpDiagnostics.show(data[2]);
 
 		/* Cache subscription information, it will be called multiple times */
 		let subinfo = [];
@@ -1390,48 +1106,6 @@ return view.extend({
 			subinfo.push({ 'hash': urlhash, 'title': title });
 		}
 
-		let isSubscriptionGrouphash = function(grouphash) {
-			for (let info of subinfo)
-				if (info.hash === grouphash)
-					return true;
-
-			return false;
-		};
-
-		let collectNodeSections = function(grouphash) {
-			let sections = [];
-
-			uci.sections(data[0], 'node', (res) => {
-				if (grouphash ? res.grouphash === grouphash : !isSubscriptionGrouphash(res.grouphash))
-					sections.push(res['.name']);
-			});
-
-			return sections;
-		};
-
-		let addTcpingButton = function(tab, option, grouphash) {
-			o = s.taboption(tab, form.DummyValue, option, '');
-			o.rawhtml = true;
-			o.renderWidget = function() {
-				hpTcping.ensureStyle();
-				return E('div', {
-					'class': 'homeproxy-tcping-toolbar',
-					'style': 'display:flex; align-items:center; gap:.75em; flex-wrap:wrap;'
-				}, [
-					E('button', {
-						'class': 'cbi-button cbi-button-action homeproxy-tcping-button',
-						'title': '测速',
-						'type': 'button',
-						'click': (ev) => hpTcping.runNodes(collectNodeSections(grouphash), ev)
-					}, [ hpTcping.renderIcon('homeproxy-tcping-icon') ]),
-					E('span', {
-						'class': 'homeproxy-tcping-help',
-						'style': 'color:var(--text-color-medium, #777); line-height:1.4;'
-					}, hpTcping.helpText)
-				]);
-			};
-		};
-
 		m = new form.Map('homeproxy', _('Edit nodes'));
 
 		s = m.section(form.NamedSection, 'subscription', 'homeproxy');
@@ -1439,18 +1113,9 @@ return view.extend({
 		/* Node settings start */
 		/* User nodes start */
 		s.tab('node', _('Nodes'));
-		addTcpingButton('node', '_tcping_node');
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
-		ss.handleRemove = function(section_id, ev) {
-			return showNodeReferenceNotice(section_id).then((blocked) => {
-				if (blocked)
-					return Promise.resolve();
-
-				return form.GridSection.prototype.handleRemove.apply(this, [ section_id, ev ]);
-			});
-		};
 		ss.filter = function(section_id) {
 			for (let info of subinfo)
 				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
@@ -1553,7 +1218,6 @@ return view.extend({
 		/* Subscription nodes start */
 		for (const info of subinfo) {
 			s.tab('sub_' + info.hash, _('Sub (%s)').format(info.title));
-			addTcpingButton('sub_' + info.hash, '_tcping_' + info.hash, info.hash);
 			o = s.taboption('sub_' + info.hash, form.SectionValue, '_sub_' + info.hash, form.GridSection, 'node');
 			ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 			ss.filter = function(section_id) {
@@ -1620,11 +1284,6 @@ return view.extend({
 		o.rmempty = false;
 		o.onchange = allowInsecureConfirm;
 
-		o = s.taboption('subscription', form.Flag, 'allow_unsupported_tls_pin_fallback', _('Allow unsupported certificate pin fallback'),
-			_('When a subscription node uses a server certificate fingerprint but the current sing-box version cannot express it, skip the node by default. Enable this only if you explicitly accept falling back to TLS insecure mode for compatibility.'));
-		o.rmempty = false;
-		o.onchange = allowInsecureConfirm;
-
 		o = s.taboption('subscription', form.ListValue, 'packet_encoding', _('Default packet encoding'));
 		o.value('', _('none'));
 		o.value('packetaddr', _('packet addr (v2ray-core v5+)'));
@@ -1652,35 +1311,10 @@ return view.extend({
 			}
 		}
 		o.onclick = function() {
-			ui.showModal(_('Updating subscriptions...'), [
-				E('p', _('Subscription update is running. The page will refresh automatically when it finishes.'))
-			]);
-
-			return callUpdateSubscriptions().catch((err) => {
-				return {
-					result: false,
-					error: subscriptionRpcErrorMessage(err, _('An error occurred while updating subscriptions.'))
-				};
-			}).then((res) => {
-				if (!res.result) {
-					ui.hideModal();
-					ui.addNotification(null, E('p', res.error || _('An error occurred while updating subscriptions.')), 'warning');
-					return this.map.reset();
-				}
-
-				return pollSubscriptionUpdateStatus(0).then((status) => {
-					ui.hideModal();
-
-					if (!status.update_result) {
-						ui.addNotification(null, E('p', status.error || _('An error occurred while updating subscriptions.')), 'warning');
-						return this.map.reset();
-					}
-
-					return location.reload();
-				});
+			return fs.exec_direct('/etc/homeproxy/scripts/update_subscriptions.uc').then((res) => {
+				return location.reload();
 			}).catch((err) => {
-				ui.hideModal();
-				ui.addNotification(null, E('p', subscriptionRpcErrorMessage(err, _('An error occurred while updating subscriptions.'))), 'warning');
+				ui.addNotification(null, E('p', _('An error occurred during updating subscriptions: %s').format(err)));
 				return this.map.reset();
 			});
 		}
@@ -1708,17 +1342,19 @@ return view.extend({
 					subnodes = subnodes.concat(res['.name'])
 			});
 
-			return L.resolveDefault(callRemoveSubscriptionNodes(subnodes), { result: false, error: _('Unknown error.') }).then((res) => {
-				if (!res.result)
-					throw new Error(res.error || _('Unknown error.'));
+			for (let i in subnodes)
+				uci.remove(data[0], subnodes[i]);
 
-				this.inputtitle = _('%s nodes removed').format(res.removed || 0);
-				this.readonly = true;
-				return location.reload();
-			}).catch((err) => {
-				ui.addNotification(null, E('p', _('An error occurred during removing subscription nodes: %s').format(err.message || err)));
-				return this.map.reset();
-			});
+			if (subnodes.includes(uci.get(data[0], 'config', 'main_node')))
+				uci.set(data[0], 'config', 'main_node', 'nil');
+
+			if (subnodes.includes(uci.get(data[0], 'config', 'main_udp_node')))
+				uci.set(data[0], 'config', 'main_udp_node', 'nil');
+
+			this.inputtitle = _('%s nodes removed').format(subnodes.length);
+			this.readonly = true;
+
+			return this.map.save(null, true);
 		}
 		/* Subscriptions settings end */
 

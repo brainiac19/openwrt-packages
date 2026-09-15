@@ -37,14 +37,14 @@ return baseclass.extend({
 	disableCache: true,
 
 	// Optional enhancement: never load the helper or query OUIs without the package.
-	renderHostname(host, mac) {
+	renderHostname(host, mac, fnos) {
 		const node = E('span', { 'style': 'display:block;text-align:left' }, [ document.createTextNode(host || '-') ]);
 		if (!L.hasSystemFeature('oui'))
 			return node;
 		if (!this.ouiLoader) {
 			this.ouiLoader = Promise.all([L.resolveDefault(uci.load('oui')), new Promise(function(resolve) {
 				const script = document.createElement('script');
-				script.src = L.resource('oui/oui.js') + '?v=6';
+				script.src = L.resource('oui/oui.js') + '?v=8';
 				script.onload = function() { resolve(window.luciOUI); };
 				script.onerror = function() { resolve(null); };
 				document.head.appendChild(script);
@@ -56,7 +56,7 @@ return baseclass.extend({
 		}
 		this.ouiLoader.then(function(oui) {
 			if (oui)
-				oui.decorate(node, mac);
+				oui.decorate(node, mac, fnos);
 		});
 		return node;
 	},
@@ -88,7 +88,13 @@ return baseclass.extend({
 		return this.rateValue(this.clientAddresses(lease, hints), data, direction);
 	},
 
-	rateValue(addresses, data, direction, mac) {
+	rateValue(addresses, data, direction, mac, online) {
+		if (direction == 'connections') {
+			if (online === false)
+				return [0, '0'];
+			const value = data?.connections?.[mac?.toUpperCase()];
+			return value != null ? [Number(value), String(value)] : [-1, '-'];
+		}
 		if (direction == 'total') {
 			const value = data?.totals?.[mac?.toUpperCase()];
 			return value != null ? [Number(value), '%1024.2mB'.format(value)] : [-1, '-'];
@@ -103,15 +109,26 @@ return baseclass.extend({
 		return addresses.length ? [ total, '%1024.1mB/s'.format(total) ] : [ -1, '-' ];
 	},
 
-	rateCell(lease, hints, direction) {
+	rateCell(lease, hints, direction, online) {
 		const addresses = this.clientAddresses(lease, hints);
-		const value = this.rateValue(addresses, this.rateData, direction, lease.macaddr);
+		const value = this.rateValue(addresses, this.rateData, direction, lease.macaddr, online);
 		return [ value[0], E('span', {
 			'class': 'luci-client-rate',
 			'data-addresses': JSON.stringify(addresses),
 			'data-direction': direction,
+			'data-online': online === false ? '0' : '1',
 			'data-mac': lease.macaddr || ''
 		}, value[1]) ];
+	},
+
+	isFnosClient(client, data) {
+		return (client.activeAddresses || []).some(address => {
+			const ip = validation.parseIPv4(address)?.join('.');
+			const probe = data?.clients?.[ip];
+			return !!(ip && client.macaddr && probe?.ready &&
+				probe.mac === client.macaddr.toUpperCase() &&
+				[5666, 5667].some(port => probe.ports?.includes(port)));
+		});
 	},
 
 	clientURL(lease, data) {
@@ -187,7 +204,7 @@ return baseclass.extend({
 			this.rateData = data;
 			// Query again: the normal overview refresh may have replaced the rows.
 			document.querySelectorAll('.luci-client-rate').forEach(cell => {
-				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction, cell.dataset.mac);
+				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction, cell.dataset.mac, cell.dataset.online !== '0');
 				cell.textContent = value[1];
 				cell.closest('td')?.setAttribute('data-value', value[0]);
 			});
@@ -364,8 +381,9 @@ return baseclass.extend({
 	},
 
 	renderLeases(dhcp_leases, host_hints, macaddr, web, arp, history) {
+		const arpClients = this.arpLeases(arp);
 		const leases = [...(Array.isArray(dhcp_leases.dhcp_leases) ? dhcp_leases.dhcp_leases : []),
-			...this.arpLeases(arp),
+			...arpClients,
 			...(Array.isArray(history?.dhcp_leases) ? history.dhcp_leases : []).map(lease => ({ ...lease, _historical: true }))];
 		const leases6 = [...(Array.isArray(dhcp_leases.dhcp6_leases) ? dhcp_leases.dhcp6_leases : []),
 			...(Array.isArray(history?.dhcp6_leases) ? history.dhcp6_leases : []).map(lease => ({ ...lease, _historical: true }))];
@@ -393,9 +411,8 @@ return baseclass.extend({
 		};
 
 		const clients = this.mergeLeases(leases, leases6, host_hints);
-		const onlineMACs = new Set(String(arp || '').trim().split(/\n/).map(line => line.trim().split(/\s+/))
-			.filter(fields => fields.length == 6 && fields[5] == 'br-lan')
-			.map(fields => fields[3].toUpperCase()));
+		// Failed neighbours can retain their MAC in /proc/net/arp with flags 0x0.
+		const onlineMACs = new Set(arpClients.map(client => client.macaddr));
 		const table = E('table', { 'id': 'status_leases', 'class': 'table leases' }, [
 			E('tr', { 'class': 'tr table-titles' }, [
 				E('th', { 'class': 'th' }, _('Online')),
@@ -406,6 +423,7 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
 				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic')),
+				E('th', { 'class': 'th' }, _('Connection count')),
 				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions center' }, _('Static Lease'))
 			])
 		]);
@@ -413,9 +431,7 @@ return baseclass.extend({
 		this.initLeaseTable(table);
 		cbi_update_table(table, clients.map(client => {
 			const hint = machints.find(h => h[0].toUpperCase() == client.macaddr);
-			let host = client.hostname || hint?.[1];
-			if (hint && client.hostname && client.hostname != hint[1])
-				host = '%s (%s)'.format(client.hostname, hint[1]);
+			const host = client.hostname || hint?.[1];
 			const vendor = macaddr?.[client.macaddr?.toLowerCase()]?.vendor;
 			const online = onlineMACs.has(client.macaddr);
 			const status = online ? _('Online') : _('Offline');
@@ -425,7 +441,7 @@ return baseclass.extend({
 					'role': 'img', 'aria-label': status, 'title': status,
 					'style': 'display:inline-block;width:10px;height:10px;border-radius:50%;background-color:' + (online ? '#28a745' : '#dc3545')
 				})],
-				this.renderHostname(host, client.macaddr),
+				this.renderHostname(host, client.macaddr, this.isFnosClient(client, web)),
 				client.ipaddrs.length ? E('div', {}, client.ipaddrs.map(ipaddr =>
 					E('div', client.activeAddresses.includes(this.normalizeRateAddress(ipaddr)) ? {} : { 'style': 'opacity:.55', 'title': _('Expired') },
 						client.activeAddresses.includes(this.normalizeRateAddress(ipaddr)) ? this.renderClientIP({ ipaddr, macaddr: client.macaddr }, web) : ipaddr))) : '-',
@@ -434,7 +450,8 @@ return baseclass.extend({
 				vendor ? `${client.macaddr} (${vendor})` : client.macaddr || '-',
 				this.rateCell(client, host_hints, 'upload'),
 				this.rateCell(client, host_hints, 'download'),
-				this.rateCell(client, host_hints, 'total')
+				this.rateCell(client, host_hints, 'total'),
+				this.rateCell(client, host_hints, 'connections', online)
 			];
 			if (!isReadonlyView)
 				columns.push(this.leaseActions(client));

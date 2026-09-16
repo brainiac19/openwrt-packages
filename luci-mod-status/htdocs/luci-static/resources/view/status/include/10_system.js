@@ -88,11 +88,6 @@ return baseclass.extend({
 			_('Architecture'),     (cpuinfo.cpuinfo || boardinfo.system) + ' ' + cpubench.cpubench,
 			_('Target Platform'),  (L.isObject(boardinfo.release) ? boardinfo.release.target : ''),
 			_('Firmware Version'), (L.isObject(boardinfo.release) ? boardinfo.release.description + ' / ' : '') + (luciversion || ''),
-				? '%s%s / '.format(
-					boardinfo.release.description || '',
-					boardinfo.release.revision ? boardinfo.release.revision : ''
-				)
-				: '') + (luciversion || ''),
 			_('Kernel Version'),   boardinfo.kernel,
 			_('Local Time'),       datestr,
 			_('Uptime'),           systeminfo.uptime ? '%t'.format(systeminfo.uptime) : null,
@@ -105,7 +100,7 @@ return baseclass.extend({
 
 		if (cpuusage.tempinfo) {
 			fields.splice(6, 0, _('Temperature'));
-			fields.splice(7, 0, tempinfo.tempinfo);
+			fields.splice(7, 0, cpuusage.tempinfo);
 		}
 		if (boardinfo.model != "Default string Default string") {
 			fields.splice(2, 0, _('Model'));

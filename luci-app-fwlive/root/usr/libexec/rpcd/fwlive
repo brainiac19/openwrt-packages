@@ -255,7 +255,7 @@ _fwlive_tmp_dir_ok() {
 	# Fail closed unless the dump dir is a real directory with the sticky
 	# bit. Without sticky, another uid can unlink a just-created mktemp
 	# file and replace it with a symlink before we reopen with `>` as
-	# root (same class as #204). Optional $1 is for CLI tests; production
+	# root (same class as the WAN logging lock). Optional $1 is for CLI tests; production
 	# always uses /tmp.
 	dir="${1:-/tmp}"
 	[ -n "$dir" ] || return 1
@@ -444,23 +444,45 @@ fetch_firewall_logs() {
 		return 0
 	fi
 
+	# Summary aggregation is part of the adaptive contract. Keep it out of
+	# adaptive=0 replies, while the classifier still remains the single pass
+	# over decoded log entries (#306).
+	if fwlive_adaptive_enabled; then
+		FWLIVE_SUMMARY=1
+	else
+		FWLIVE_SUMMARY=0
+	fi
+	export FWLIVE_SUMMARY
+
 	# Do not swallow a filter failure into a silent empty table (#220).
 	# If the filter exits non-zero but still printed JSON, keep it.
 	# Empty success is not valid poll JSON — the shipped filter always
 	# prints {"log":[...]}, but a stub/regression must not emit a blank body.
+	_filter_ok=1
 	if ! out=$(printf '%s' "$raw" | "$FILTER_SH"); then
+		_filter_ok=0
 		if [ -z "$out" ]; then
 			out='{"log":[],"error":"filter_failed"}'
 		fi
 	fi
-	[ -n "$out" ] || out='{"log":[],"error":"filter_empty"}'
+	if [ -z "$out" ]; then
+		_filter_ok=0
+		out='{"log":[],"error":"filter_empty"}'
+	fi
+	# A classifier can return a structured error body while exiting zero (for
+	# example classifier_missing).  Preserve the error for the caller, but do
+	# not let it overwrite a prior hot state as a healthy fast sample.
+	case "$out" in
+		*'"error":'*) _filter_ok=0 ;;
+	esac
 	end_cs=$(fwlive_adaptive_clock_cs)
 	# Uptime wrap / skew: end < start — do not record as cold (Grok #329 P2).
-	if [ "$end_cs" -ge "$start_cs" ]; then
+	if [ "$_filter_ok" = 1 ] && [ "$end_cs" -ge "$start_cs" ]; then
 		_dur=$(((end_cs - start_cs) * 10))
 		fwlive_adaptive_record "$_dur" "$lines"
 	fi
-	# Layer 1: messages_received stays 0 — no post-filter ash count (Grok #329 P1).
+	# The filter carries messages_received from its jsonfilter enumeration;
+	# failed/read-invalid paths keep the merge fallback at 0.
 	_trunc=0
 	[ "$shed_flag" = 1 ] && _trunc=1
 	[ "$lines" -lt "$requested" ] && _trunc=1

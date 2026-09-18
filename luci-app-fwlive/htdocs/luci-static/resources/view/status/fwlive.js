@@ -21,6 +21,7 @@
 'require fwlive.proto as proto';
 'require fwlive.poll-coordinator as pollCoordinator';
 'require fwlive.render-policy as renderPolicy';
+'require fwlive.render-scheduler as renderScheduler';
 
 const callFwlivePoll = rpc.declare({
 	object: 'fwlive',
@@ -108,7 +109,10 @@ return view.extend({
 	/* One-shot: first live poll after unpause merges instead of replacing. */
 	resumeMerge: false,
 	pollCoordinator: null,
+	renderScheduler: null,
 	pagehideHandler: null,
+	/* Terminal after a non-persisted pagehide; late startup RPCs must not paint. */
+	viewDisposed: false,
 	/* Layer 2 — visibility / RTT cadence / shed surfacing. */
 	rttStreakKind: null,
 	rttStreakCount: 0,
@@ -126,14 +130,8 @@ return view.extend({
 	summaryRowsShown: false,
 	summaryData: null,
 	resolveLoadShed: false,
-	renderRaf: 0,
 	filterInputTimer: null,
 	messageLayout: 'wrap',
-	renderBucket: constants.RENDER_CAP_PER_SEC,
-	renderBucketMs: 0,
-	floodSuppressed: false,
-	pendingForceRender: false,
-	pendingRenderEpoch: null,
 	/* Session-new IDs from the last applied batch; this is not buffer growth. */
 	lastBatchNewIdCount: 0,
 	showHostnames: false,
@@ -146,8 +144,6 @@ return view.extend({
 	resolveGeneration: 0,
 	lastPollError: false,
 	lastRulesError: null,
-	lastRenderedRowCount: 0,
-	lastRenderedHeadId: '',
 	followLive: true,
 	rulesMap: {},
 	firewallBackend: 'nft',
@@ -621,12 +617,14 @@ return view.extend({
 	async loadRulesMap() {
 		try {
 			const res = await callFwliveRules();
+			if (this.viewDisposed) return;
 			this.rulesMap = (res && res.rules) || {};
 			this.firewallBackend = (res && res.backend) || 'nft';
 			/* Bounds / mktemp failures are reply.error — same idea as poll. */
 			this.lastRulesError = (res && res.error) || null;
 			if (this.lastRulesError) console.warn('fwlive rules map error:', this.lastRulesError);
 		} catch (e) {
+			if (this.viewDisposed) return;
 			this.rulesMap = {};
 			this.firewallBackend = 'nft';
 			this.lastRulesError = 'rules_unavailable';
@@ -674,9 +672,12 @@ return view.extend({
 	async loadLoggingStatus() {
 		const wasWeakDevice = this.weakDevice;
 		try {
-			this.loggingStatus = await callFwliveLoggingStatus();
+			const status = await callFwliveLoggingStatus();
+			if (this.viewDisposed) return;
+			this.loggingStatus = status;
 			this.weakDevice = !!(this.loggingStatus && this.loggingStatus.weak_device === true);
 		} catch (e) {
+			if (this.viewDisposed) return;
 			this.loggingStatus = null;
 		}
 		this.updateBackendUi();
@@ -866,19 +867,10 @@ return view.extend({
 		return { rows: normalized, pollNew: pollNew };
 	},
 
-	async fetchEntries() {
-		if (!this.sessionSeen) this.sessionSeen = new Set();
-
-		const epoch = this.currentPollEpoch();
-		const resumeMerge = !!this.resumeMerge;
-		const fetchLines = this.requestedFetchLines();
-		const beforeLength = this.entries.length;
-		this.lastPollRequestedLines = fetchLines;
-		this.lastPollReturnedMessages = null;
-		this.lastPollEffectiveLimit = null;
+	/* Keep RPC timing and reply acquisition separate from view-state mutation. */
+	async fetchPollReply(fetchLines) {
 		const t0 = this.nowMs();
 		let reply;
-		let errored = false;
 		try {
 			/* Raw logd lines, not post-filter rows. Fetch a multiple of the
 			 * display limit so mixed syslog still fills the table; pause
@@ -887,14 +879,24 @@ return view.extend({
 				addresses: [String(fetchLines)]
 			});
 		} catch (e) {
-			errored = true;
 			reply = null;
 		}
+		return {
+			reply: reply,
+			rtt: this.nowMs() - t0
+		};
+	},
 
-		/* Visibility changes and disposal invalidate all application of this reply. */
-		if (epoch !== this.currentPollEpoch()) return;
-
-		const rtt = this.nowMs() - t0;
+	/* Caller must discard stale epochs before this synchronous application.
+	 * This updates transport/adaptive state, summary/banner UI, rows, and buffer. */
+	applyPollReply(poll, context) {
+		const reply = poll.reply;
+		const rtt = poll.rtt;
+		const resumeMerge = context.resumeMerge;
+		const fetchLines = context.fetchLines;
+		const beforeLength = context.beforeLength;
+		this.lastPollReturnedMessages = null;
+		this.lastPollEffectiveLimit = null;
 
 		if (!reply || typeof reply !== 'object' || Array.isArray(reply)) {
 			this.lastPollError = true;
@@ -940,7 +942,7 @@ return view.extend({
 			this.lastPollEffectiveLimit = reply.effective_limit;
 		}
 
-		this.notePollRtt(rtt, errored);
+		this.notePollRtt(rtt, false);
 		this.updateAdaptiveBanner();
 		if (this.clientBackoffEnabled() && rtt > constants.POLL_RTT_SLOW_MS) {
 			if (!this.summaryMode) this.enterSummaryMode(reply.summary);
@@ -958,14 +960,38 @@ return view.extend({
 		this.entries = buffer.applyFetchedEntries(this.entries, batch.rows, {
 			/* buffer.js retains its public paused option; this is the view's table state. */
 			paused: this.tablePaused,
-			resumeMerge: resumeMerge,
+			resumeMerge: resumeMerge || context.pausedAtStart,
 			rowLimit: this.rowLimit,
 			fetchLinesMax: constants.FETCH_LINES_MAX
 		});
 		this.updateFillingState(beforeLength, reply, fetchLines);
-		/* A stale request returns above. Keep this obligation until a current
-		 * request has actually applied the merged batch. */
+		/* Clear the merge obligation only after the current batch is applied. */
 		if (resumeMerge) this.resumeMerge = false;
+	},
+
+	async fetchEntries() {
+		if (!this.sessionSeen) this.sessionSeen = new Set();
+
+		const epoch = this.currentPollEpoch();
+		const pausedAtStart = !!this.tablePaused;
+		const resumeMerge = !!this.resumeMerge;
+		const fetchLines = this.requestedFetchLines();
+		const beforeLength = this.entries.length;
+		this.lastPollRequestedLines = fetchLines;
+		this.lastPollReturnedMessages = null;
+		this.lastPollEffectiveLimit = null;
+
+		const poll = await this.fetchPollReply(fetchLines);
+
+		/* Visibility changes and disposal invalidate all application of this reply. */
+		if (epoch !== this.currentPollEpoch()) return;
+
+		this.applyPollReply(poll, {
+			beforeLength: beforeLength,
+			fetchLines: fetchLines,
+			pausedAtStart: pausedAtStart,
+			resumeMerge: resumeMerge
+		});
 	},
 
 	rememberSessionId(id) {
@@ -1002,7 +1028,8 @@ return view.extend({
 
 		const cap = this.ingestCap();
 		if (this.entries.length >= cap && cap > 0) bits.push(_('buffer full'));
-		if (this.floodSuppressed) bits.push(_('render paused (high rate)'));
+		if (this.ensureRenderScheduler().isFloodSuppressed())
+			bits.push(_('render paused (high rate)'));
 		if (this.weakDevice && this.rowLimit > constants.WEAK_DEVICE_DISPLAY_ROW_CAP)
 			bits.push(
 				_('Display limited to %d rows on this device').format(
@@ -1072,6 +1099,26 @@ return view.extend({
 		return this.pollCoordinator;
 	},
 
+	ensureRenderScheduler() {
+		if (this.renderScheduler) return this.renderScheduler;
+		this.renderScheduler = renderScheduler.create({
+			getEpoch: () => this.currentPollEpoch(),
+			render: (force) => this.renderRows(force),
+			renderCost: renderPolicy.renderCost,
+			now: () => this.nowMs(),
+			capacity: constants.RENDER_CAP_PER_SEC,
+			requestFrame:
+				typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+					? (cb) => window.requestAnimationFrame(cb)
+					: null,
+			cancelFrame:
+				typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+					? (id) => window.cancelAnimationFrame(id)
+					: null
+		});
+		return this.renderScheduler;
+	},
+
 	currentPollEpoch() {
 		return this.ensurePollCoordinator().getState().epoch;
 	},
@@ -1111,7 +1158,9 @@ return view.extend({
 	},
 
 	disposeView() {
+		this.viewDisposed = true;
 		if (this.pollCoordinator) this.pollCoordinator.dispose();
+		if (this.renderScheduler) this.renderScheduler.dispose();
 		this.resolveGeneration = (this.resolveGeneration || 0) + 1;
 		this.resolveInFlight = false;
 		if (this.pagehideHandler) {
@@ -1283,76 +1332,7 @@ return view.extend({
 	},
 
 	scheduleRenderRows(force) {
-		const doForce = !!force;
-		const epoch = this.currentPollEpoch();
-		if (typeof requestAnimationFrame !== 'function') {
-			this.renderRows(doForce);
-			return;
-		}
-		if (this.renderRaf) {
-			this.pendingForceRender = this.pendingForceRender || doForce;
-			this.pendingRenderEpoch = epoch;
-			return;
-		}
-		this.renderRaf = requestAnimationFrame(
-			function () {
-				this.renderRaf = 0;
-				const f = doForce || !!this.pendingForceRender;
-				const pendingEpoch = this.pendingRenderEpoch;
-				this.pendingForceRender = false;
-				this.pendingRenderEpoch = null;
-				if (epoch !== this.currentPollEpoch()) {
-					/* A newer epoch may have requested a render while this frame was
-					 * queued. Drop stale paint and requeue only that current request. */
-					if (pendingEpoch === this.currentPollEpoch()) this.scheduleRenderRows(f);
-					return;
-				}
-				this.renderRows(f);
-			}.bind(this)
-		);
-	},
-
-	refillRenderBucket() {
-		const now = Date.now();
-		if (!this.renderBucketMs) this.renderBucketMs = now;
-
-		const elapsed = now - this.renderBucketMs;
-		this.renderBucketMs = now;
-		this.renderBucket = Math.min(
-			constants.RENDER_CAP_PER_SEC,
-			this.renderBucket + (elapsed * constants.RENDER_CAP_PER_SEC) / 1000
-		);
-	},
-
-	consumeRenderBudget(cost) {
-		if (cost <= 0) {
-			this.floodSuppressed = false;
-			return true;
-		}
-
-		this.refillRenderBucket();
-		if (cost <= this.renderBucket) {
-			this.renderBucket -= cost;
-			this.floodSuppressed = false;
-			return true;
-		}
-
-		this.floodSuppressed = true;
-		return false;
-	},
-
-	/** Charge by new log events per poll, not full table size (avoids false throttle at high limits). */
-	renderBudgetCost(rows) {
-		const count = rows ? rows.length : 0;
-		const headId = count ? rows[0].id : '';
-
-		return renderPolicy.renderCost({
-			visibleRowCount: count,
-			visibleHeadId: headId,
-			lastRenderedRowCount: this.lastRenderedRowCount,
-			lastRenderedHeadId: this.lastRenderedHeadId,
-			lastBatchNewIdCount: this.lastBatchNewIdCount
-		});
+		this.ensureRenderScheduler().schedule(!!force);
 	},
 
 	updateFloodBanner() {
@@ -1360,7 +1340,7 @@ return view.extend({
 		if (!el) return;
 		if (!el.style) el.style = { display: '' };
 
-		if (this.floodSuppressed) {
+		if (this.ensureRenderScheduler().isFloodSuppressed()) {
 			el.style.display = 'block';
 			el.textContent = _(
 				'High event rate — table refresh is throttled to protect the browser. The buffer still updates; refresh will resume automatically.'
@@ -1547,9 +1527,8 @@ return view.extend({
 		this.saveRowLimit();
 		this.updateHash(this.readFilters());
 		/* Reset flood throttle so Limit changes paint even during ping -A. */
-		this.renderBucket = constants.RENDER_CAP_PER_SEC;
-		this.floodSuppressed = false;
-		this.pendingForceRender = true;
+		this.ensureRenderScheduler().resetBudget();
+		const cancelForce = this.ensureRenderScheduler().forceNextRender();
 		if (!this.tablePaused) this.renderRows(true);
 		else this.updateStatus();
 		const epoch = this.currentPollEpoch();
@@ -1560,9 +1539,7 @@ return view.extend({
 				if (this.tablePaused) this.updateStatus();
 				else this.renderRows(true);
 			})
-			.finally(() => {
-				this.pendingForceRender = false;
-			});
+			.finally(cancelForce);
 	},
 
 	limitSelectOptions() {
@@ -1825,17 +1802,14 @@ return view.extend({
 		this.updateHash(this.readFilters());
 
 		const rows = this.filteredRows();
-		const cost = force ? Math.max(1, rows.length) : this.renderBudgetCost(rows);
+		const paint = this.ensureRenderScheduler().shouldRender(
+			rows,
+			!!force,
+			this.lastBatchNewIdCount
+		);
 		this.updateLoggingToolbarUi();
 
-		if (!force && cost === 0) {
-			this.floodSuppressed = false;
-			this.updateFloodBanner();
-			this.updateStatus(rows);
-			return;
-		}
-
-		if (!force && !this.consumeRenderBudget(cost)) {
+		if (!paint) {
 			this.updateFloodBanner();
 			this.updateStatus(rows);
 			return;
@@ -1875,15 +1849,14 @@ return view.extend({
 			else scroll.scrollTop = prevScroll;
 		}
 
-		this.lastRenderedRowCount = rows.length;
-		this.lastRenderedHeadId = rows.length ? rows[0].id : '';
+		this.ensureRenderScheduler().markRendered(rows);
 
 		if (rows.length && this.rowTintEnabled() && !this.tintProbeDone) {
 			const runProbe = () => {
 				if (!this.tintProbeDone) this.probeRowTintPaint();
 			};
-			if (typeof requestAnimationFrame === 'function')
-				requestAnimationFrame(() => requestAnimationFrame(runProbe));
+			if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+				window.requestAnimationFrame(() => window.requestAnimationFrame(runProbe));
 			else setTimeout(runProbe, 0);
 		} else if (!this.rowTintEnabled() && this.tintFallbackActive) {
 			this.clearTintFallback(document.querySelector('.fwlive-map'));
@@ -1997,7 +1970,7 @@ return view.extend({
 			 * and stays behind the explicit Show rows control. */
 			if (this.tablePaused) this.updateStatus();
 			else if (this.summaryMode) this.renderSummary();
-			else this.scheduleRenderRows(!!this.pendingForceRender);
+			else this.scheduleRenderRows();
 
 			try {
 				await this.resolveHostnamesForEntries(this.filteredRows());
@@ -2012,6 +1985,9 @@ return view.extend({
 	},
 
 	load() {
+		/* A late LuCI lifecycle callback may re-enter load() after pagehide has
+		 * made disposal terminal; do not restore state or re-register polling. */
+		if (this.viewDisposed) return Promise.resolve();
 		/* RPC-affecting preferences must precede poll registration and the first
 		 * request; filter widgets still restore in addFooter after render. */
 		this.resolveRpcPreferences();
@@ -2026,12 +2002,15 @@ return view.extend({
 			window.addEventListener('pagehide', this.pagehideHandler);
 		}
 		coordinator.startPolling();
-		return Promise.all([this.loadRulesMap(), this.loadLoggingStatus()]).then(() =>
-			this.requestPoll()
-		);
+		return Promise.all([this.loadRulesMap(), this.loadLoggingStatus()]).then(() => {
+			if (this.viewDisposed) return;
+			return this.requestPoll();
+		});
 	},
 
 	render() {
+		/* LuCI may finish the load/render/addFooter sequence after pagehide. */
+		if (this.viewDisposed) return E('div', { 'class': 'cbi-map' });
 		return E(
 			'div',
 			{ 'class': 'cbi-map fwlive-map', 'data-view': 'simple', 'data-row-tint': 'classic' },
@@ -2459,6 +2438,7 @@ return view.extend({
 	},
 
 	addFooter() {
+		if (this.viewDisposed) return;
 		this.viewMode = this.readViewMode();
 		this.messageLayout = this.readMessageLayout();
 		this.showHostnames = this.readShowHostnames();

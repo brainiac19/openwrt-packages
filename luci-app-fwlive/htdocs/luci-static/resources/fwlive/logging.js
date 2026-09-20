@@ -17,7 +17,7 @@
  *
  * renderManualTestNodes(host, state, callbacks) → void
  *   host      - <ul> element inside #fwlive-help (cleared and rebuilt)
- *   state     - { firewallBackend }
+ *   state     - unused; nft-only instruction
  *
  * Empty-state helpers:
  *   buildEmptyStateNodes(state, callbacks) → Node[]
@@ -33,7 +33,7 @@ const CONSENT_STORAGE_KEY = 'fwlive-logging-consent-v1';
 function consentDismissedPermanent() {
 	try {
 		return localStorage.getItem(CONSENT_STORAGE_KEY) === '1';
-	} catch (e) {
+	} catch (_e) {
 		return false;
 	}
 }
@@ -41,7 +41,7 @@ function consentDismissedPermanent() {
 function persistConsentDismissed() {
 	try {
 		localStorage.setItem(CONSENT_STORAGE_KEY, '1');
-	} catch (e) {
+	} catch (_e) {
 		/* private mode / no storage */
 	}
 }
@@ -72,6 +72,21 @@ function blockerCode(state) {
 	return '';
 }
 
+function wanZoneCandidateNames(st) {
+	return Array.isArray(st && st.wan_zone_candidates)
+		? st.wan_zone_candidates.filter(function (name) {
+				return typeof name === 'string';
+			})
+		: [];
+}
+
+function labelWithZoneCandidates(label, st) {
+	const children = [label];
+	const candidates = wanZoneCandidateNames(st);
+	if (candidates.length) children.push(': ', E('code', {}, [candidates.join(', ')]));
+	return children;
+}
+
 function renderToolbar(host, state, callbacks) {
 	host.innerHTML = '';
 	const st = state.loggingStatus;
@@ -85,9 +100,11 @@ function renderToolbar(host, state, callbacks) {
 
 	if (blocker === 'no_wan_zone') {
 		host.appendChild(
-			E('span', { 'class': 'fwlive-logging-status' }, [
-				_('WAN logging unavailable: no WAN zone')
-			])
+			E(
+				'span',
+				{ 'class': 'fwlive-logging-status' },
+				labelWithZoneCandidates(_('WAN logging unavailable: no WAN zone'), st)
+			)
 		);
 		host.appendChild(links.firewallZonesLink());
 		return;
@@ -218,7 +235,13 @@ function buildEmptyStateNodes(state, callbacks) {
 	}
 
 	if (blocker === 'no_wan_zone') {
-		nodes.push(E('p', { 'class': 'fwlive-empty-title' }, [_('No WAN zone found')]));
+		nodes.push(
+			E(
+				'p',
+				{ 'class': 'fwlive-empty-title' },
+				labelWithZoneCandidates(_('No WAN zone found'), st)
+			)
+		);
 		nodes.push(
 			E('p', {}, [
 				_('No WAN firewall zone found in /etc/config/firewall. Configure zones under '),
@@ -307,29 +330,19 @@ function renderEmptyState(host, state, callbacks) {
 }
 
 /**
- * renderManualTestNodes — fills a <li> host element with the backend-specific
- * manual test instruction. Call from addFooter() after render() has inserted
+ * renderManualTestNodes — fills a <li> host element with the nft manual test
+ * instruction. Call from addFooter() after render() has inserted
  * the placeholder <li id="fwlive-manual-test">.
  */
-function renderManualTestNodes(host, state, _callbacks) {
+function renderManualTestNodes(host, _state, _callbacks) {
 	host.innerHTML = '';
-	if (state.firewallBackend === 'iptables') {
-		host.appendChild(document.createTextNode(_('Manual test (System → Terminal): ')));
-		host.appendChild(
-			E('code', {}, [
-				'iptables -I INPUT -p icmp --icmp-type echo-request -j LOG --log-prefix "fwlive-ping: "'
-			])
-		);
-		host.appendChild(document.createTextNode(_(' then ping the router.')));
-	} else {
-		host.appendChild(document.createTextNode(_('Manual test (System → Terminal): ')));
-		host.appendChild(
-			E('code', {}, [
-				'nft insert rule inet fw4 input ip protocol icmp icmp type echo-request log prefix "fwlive-ping " accept'
-			])
-		);
-		host.appendChild(document.createTextNode(_(' then ping the router.')));
-	}
+	host.appendChild(document.createTextNode(_('Manual test (System → Terminal): ')));
+	host.appendChild(
+		E('code', {}, [
+			'nft insert rule inet fw4 input ip protocol icmp icmp type echo-request log prefix "fwlive-ping " accept'
+		])
+	);
+	host.appendChild(document.createTextNode(_(' then ping the router.')));
 }
 
 return baseclass.extend({

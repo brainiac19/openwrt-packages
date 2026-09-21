@@ -1,55 +1,326 @@
 #!/bin/sh
+#
+# Optimized & Refactored OpenWrt WiFi Configuration Script
+# Source Reference: https://github.com/kiddin9/my-packages/blob/master/my-default-settings/files/sbin/mywifi
+#
 
-board_name() {
-	[ -e /tmp/sysinfo/board_name ] && cat /tmp/sysinfo/board_name || echo "generic"
+show_help() {
+    cat << 'EOF_HELP'
+用法:
+  mywifi [选项] [WiFi名称] [WiFi密码]
+
+参数:
+  WiFi名称       基础SSID名称（缺省时自动使用系统 hostname）
+  WiFi密码       无线密码（缺省或未指定时默认无密码，指定时需 8-63 位）
+
+选项:
+  -s, --ssid <名称>       指定基础WiFi名称
+  -p, --password <密码>   指定WiFi密码
+  -f, --force             强制重新执行（跳过 wifi=1 已配置检查）
+  -h, --help              查看帮助信息
+
+WiFi命名规范:
+  2.4 GHz  -> <WiFi名>_2.4G
+  5 GHz    -> <WiFi名>_5G
+  6 GHz    -> <WiFi名>_6G
+
+使用示例:
+  mywifi                             # 默认执行（若已配置过或正在执行则自动终止）
+  mywifi -f                          # 强制重新按 hostname 恢复默认配置
+  mywifi "HomeWiFi" "12345678"       # 设置指定 WiFi 名及密码
+  mywifi -f "HomeWiFi" "12345678"    # 强制覆盖设置
+EOF_HELP
 }
 
-	wifi_setup_radio(){
-	local radio=$1
-	htmode="$(uci -q get wireless.${radio}.htmode)"
-	if uci -q get wireless.${radio} >/dev/null; then
-			uci -q del wireless.${radio}.disabled
-			uci -q set wireless.${radio}.country='CN'
-		
-		if [ "$(uci -q get wireless.${radio}.band)" = "5g" ]; then
-			uci -q set wireless.default_${radio}.ssid="${SSID}_5G"
-			if [[ "$DISTRIB_TARGET" == *ipq60xx ]]; then
-				uci set wireless.${radio}.htmode='HE80'
-			fi
-		elif [ "$(uci -q get wireless.${radio}.band)" = "2g" ]; then
-			uci -q set wireless.default_${radio}.ssid="${SSID}_2.4G"
-		fi
-			uci -q set wireless.default_${radio}.device="${radio}"
-			SSID_PASSWD="${SSID_PASSWD:-$(uci -q get wireless.default_${radio}.key)}"
-			if [ "${SSID_PASSWD}" ]; then
-				uci -q set wireless.default_${radio}.encryption='psk2'
-				uci -q set wireless.default_${radio}.key="${SSID_PASSWD}"
-			else
-				uci -q set wireless.default_${radio}.encryption='none'
-			fi
-	fi
-	}
+# -------------------------------------------------------------
+# 1. 防并发执行检测（若 /sbin/mywifi 正在执行，直接终止脚本）
+# -------------------------------------------------------------
+LOCK_FILE="/var/run/mywifi.lock"
 
-for i in $(seq 1 10); do
-		[[ "$(uci -q get base_config.@status[0].inited)" == 1 && "$(cat /etc/config/wireless)" ]] && break
-		[ "$(cat /etc/config/wireless)" ] || /sbin/wifi config
-		sleep 1s
+check_already_running() {
+    local cur_pid=$$
+    local cur_ppid=$PPID
+
+    # A. flock 文件描述符锁（非阻塞探测）
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$LOCK_FILE" 2>/dev/null || true
+        if ! flock -n 9 2>/dev/null; then
+            echo "[INFO] 检测到 /sbin/mywifi 已在执行中 (flock 占用)，直接终止脚本。"
+            exit 0
+        fi
+    fi
+
+    # B. 进程表二次扫描（兜底兼容缺失 flock 的极限环境）
+    for p in $(pgrep -f "mywifi" 2>/dev/null); do
+        if [ "$p" != "$cur_pid" ] && [ "$p" != "$cur_ppid" ]; then
+            local cmd="$(cat /proc/$p/cmdline 2>/dev/null | tr '\0' ' ')"
+            case "$cmd" in
+                *mywifi*)
+                    echo "[INFO] 检测到 /sbin/mywifi 已在执行中 (PID: $p)，直接终止脚本。"
+                    exit 0
+                    ;;
+            esac
+        fi
+    done
+}
+
+check_already_running
+
+# -------------------------------------------------------------
+# 2. 解析命令行参数
+# -------------------------------------------------------------
+CUSTOM_SSID=""
+CUSTOM_PASSWD=""
+HAS_PASSWD=0
+FORCE=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -f|--force)
+            FORCE=1
+            ;;
+        -s|--ssid)
+            shift
+            CUSTOM_SSID="$1"
+            ;;
+        -p|--password)
+            shift
+            CUSTOM_PASSWD="$1"
+            HAS_PASSWD=1
+            ;;
+        *)
+            if [ -z "$CUSTOM_SSID" ]; then
+                CUSTOM_SSID="$1"
+            elif [ $HAS_PASSWD -eq 0 ]; then
+                CUSTOM_PASSWD="$1"
+                HAS_PASSWD=1
+            fi
+            ;;
+    esac
+    shift
 done
 
-	if [[ "$(cat /etc/config/wireless)" ]]; then
-		. /etc/openwrt_release
-		SSID="$(uci -q get wizard.default.wifi_ssid || uci -q get system.@system[0].hostname || echo Kwrt)"
-		SSID_PASSWD="$(uci -q get wizard.default.wifi_key)"
-		sed -i '/option disabled/d' /etc/config/wireless
+# -------------------------------------------------------------
+# 3. 检查 base_config 状态标记（若 wifi=1 已完成配置，直接终止）
+# -------------------------------------------------------------
+if [ $FORCE -eq 0 ]; then
+    if [ "$(uci -q get base_config.@status[0].wifi 2>/dev/null)" = "1" ]; then
+        # 如果未传入新参数或强制标志，说明是开机脚本/后台触发的重复执行，直接退出
+        if [ -z "$CUSTOM_SSID" ] && [ $HAS_PASSWD -eq 0 ]; then
+            echo "[INFO] WiFi 已配置完成 (base_config.@status[0].wifi=1)，无需重复执行，直接终止脚本。"
+            exit 0
+        fi
+    fi
+fi
 
-		[ "$(uci -q get wireless.radio1.band)" == "5g" ] && uci -q set wireless.radio0.band="2g"
-		widx=0
-		while uci rename wireless.@wifi-iface[$widx]=default_radio$widx >/dev/null 2>&1; do widx=$((widx+1)); done
-		for radio in radio0 radio1 radio2 radio3; do
-			wifi_setup_radio ${radio}
-		done
-		uci commit wireless
-		uci -q set base_config.@status[0].wifi=1
-		uci commit base_config
-		/sbin/wifi reload
-	fi
+# 密码长度合法性校验（若指定了密码）
+if [ $HAS_PASSWD -eq 1 ] && [ -n "$CUSTOM_PASSWD" ]; then
+    pwd_len=${#CUSTOM_PASSWD}
+    if [ "$pwd_len" -lt 8 ] || [ "$pwd_len" -gt 63 ]; then
+        echo "[ERROR] WiFi 密码长度必须在 8 到 63 个字符之间！" >&2
+        exit 1
+    fi
+    SSID_PASSWD="$CUSTOM_PASSWD"
+else
+    SSID_PASSWD=""
+fi
+
+# -------------------------------------------------------------
+# 4. 深度硬件就绪检测（确保多频硬件驱动加载与 UCI 配置完整就绪）
+# -------------------------------------------------------------
+wait_wifi_ready() {
+    local max_wait=15
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        local phy_count=0
+        local uci_count=0
+
+        # 检查内核物理无线设备 (PHY)
+        local phys="$(ls -d /sys/class/ieee80211/phy* 2>/dev/null)"
+        [ -n "$phys" ] && phy_count=$(echo "$phys" | wc -w)
+
+        # 检查 UCI 中真实生成的 wifi-device 数量
+        if [ -s /etc/config/wireless ]; then
+            local uci_radios="$(uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-device/\1/p')"
+            [ -n "$uci_radios" ] && uci_count=$(echo "$uci_radios" | wc -w)
+        fi
+
+        # 自动补全配置（物理硬件数量 > UCI 配置数量）
+        if [ $phy_count -gt 0 ] && [ $uci_count -lt $phy_count ]; then
+            [ -x /sbin/wifi ] && /sbin/wifi config >/dev/null 2>&1
+        elif [ $phy_count -eq 0 ] && [ $uci_count -eq 0 ] && [ ! -s /etc/config/wireless ]; then
+            [ -x /sbin/wifi ] && /sbin/wifi config >/dev/null 2>&1
+        fi
+
+        # 重新同步 UCI radio 数量
+        if [ -s /etc/config/wireless ]; then
+            local uci_radios_check="$(uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-device/\1/p')"
+            [ -n "$uci_radios_check" ] && uci_count=$(echo "$uci_radios_check" | wc -w)
+        fi
+
+        # 就绪标准判定
+        if [ $uci_count -gt 0 ]; then
+            if [ $phy_count -eq 0 ] || [ $uci_count -ge $phy_count ]; then
+                return 0
+            fi
+        fi
+
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    [ $uci_count -gt 0 ] && return 0
+    return 1
+}
+
+if ! wait_wifi_ready; then
+    echo "[ERROR] 未检测到可用无线硬件或无线配置生成超时！" >&2
+    exit 1
+fi
+
+# -------------------------------------------------------------
+# 5. 频段识别函数 (2g, 5g, 6g)
+# -------------------------------------------------------------
+detect_band() {
+    local radio="$1"
+    local band="$(uci -q get wireless.${radio}.band 2>/dev/null | tr 'A-Z' 'a-z')"
+
+    case "$band" in
+        *2g*|*2.4g*) echo "2g"; return ;;
+        *5g*) echo "5g"; return ;;
+        *6g*) echo "6g"; return ;;
+    esac
+
+    local channel="$(uci -q get wireless.${radio}.channel 2>/dev/null)"
+    if [ -n "$channel" ] && [ "$channel" -eq "$channel" 2>/dev/null ]; then
+        if [ "$channel" -ge 1 ] && [ "$channel" -le 14 ]; then
+            echo "2g"; return
+        elif [ "$channel" -ge 32 ] && [ "$channel" -le 177 ]; then
+            echo "5g"; return
+        elif [ "$channel" -ge 180 ]; then
+            echo "6g"; return
+        fi
+    fi
+
+    local hwmode="$(uci -q get wireless.${radio}.hwmode 2>/dev/null | tr 'A-Z' 'a-z')"
+    case "$hwmode" in
+        *a*) echo "5g"; return ;;
+        *b*|*g*) echo "2g"; return ;;
+    esac
+
+    if [ "$radio" = "radio0" ]; then
+        local r1_band="$(uci -q get wireless.radio1.band 2>/dev/null | tr 'A-Z' 'a-z')"
+        [ "$r1_band" = "5g" ] && echo "2g" && return
+    elif [ "$radio" = "radio1" ]; then
+        local r0_band="$(uci -q get wireless.radio0.band 2>/dev/null | tr 'A-Z' 'a-z')"
+        [ "$r0_band" = "2g" ] && echo "5g" && return
+    fi
+
+    echo "2g"
+}
+
+# -------------------------------------------------------------
+# 6. 配置 SSID 与各频段接口
+# -------------------------------------------------------------
+[ -f /etc/openwrt_release ] && . /etc/openwrt_release
+
+if [ -n "$CUSTOM_SSID" ]; then
+    SSID="$CUSTOM_SSID"
+else
+    SSID="$(uci -q get system.@system[0].hostname 2>/dev/null)"
+    [ -z "$SSID" ] && [ -r /proc/sys/kernel/hostname ] && SSID="$(cat /proc/sys/kernel/hostname)"
+    [ -z "$SSID" ] && SSID="$(uci -q get wizard.default.wifi_ssid 2>/dev/null)"
+    [ -z "$SSID" ] && SSID="OpenWrt"
+fi
+
+sed -i '/option disabled/d' /etc/config/wireless 2>/dev/null
+
+if [ "$(uci -q get wireless.radio1.band 2>/dev/null)" = "5g" ]; then
+    [ -z "$(uci -q get wireless.radio0.band 2>/dev/null)" ] && uci -q set wireless.radio0.band="2g"
+fi
+
+widx=0
+while uci rename wireless.@wifi-iface[$widx]=default_radio$widx >/dev/null 2>&1; do
+    widx=$((widx + 1))
+done
+
+wifi_setup_radio() {
+    local radio="$1"
+
+    uci -q get wireless.${radio} >/dev/null 2>&1 || return 0
+
+    uci -q del wireless.${radio}.disabled
+    uci -q set wireless.${radio}.country='CN'
+
+    local band="$(detect_band "$radio")"
+    local ssid_suffix=""
+    case "$band" in
+        2g) ssid_suffix="_2.4G" ;;
+        5g) ssid_suffix="_5G" ;;
+        6g) ssid_suffix="_6G" ;;
+        *)  ssid_suffix="_${band}" ;;
+    esac
+
+    local full_ssid="${SSID}${ssid_suffix}"
+
+    if [ "$band" = "5g" ]; then
+        case "$DISTRIB_TARGET" in
+            *ipq60xx*)
+                uci -q set wireless.${radio}.htmode='HE80'
+                ;;
+        esac
+    fi
+
+    local iface="default_${radio}"
+    uci -q get wireless.${iface} >/dev/null 2>&1 || uci -q set wireless.${iface}=wifi-iface
+
+    uci -q set wireless.${iface}.device="${radio}"
+    uci -q set wireless.${iface}.mode='ap'
+    uci -q set wireless.${iface}.network='lan'
+    uci -q set wireless.${iface}.ssid="${full_ssid}"
+
+    if [ -n "$SSID_PASSWD" ]; then
+        if [ "$band" = "6g" ]; then
+            uci -q set wireless.${iface}.encryption='sae'
+        else
+            uci -q set wireless.${iface}.encryption='psk2'
+        fi
+        uci -q set wireless.${iface}.key="${SSID_PASSWD}"
+        echo "[INFO] ${radio} (${band}): SSID='${full_ssid}', 加密='$(uci -q get wireless.${iface}.encryption)'"
+    else
+        uci -q set wireless.${iface}.encryption='none'
+        uci -q del wireless.${iface}.key
+        echo "[INFO] ${radio} (${band}): SSID='${full_ssid}', 无密码 (开放网络)"
+    fi
+}
+
+# 动态遍历所有射频设备并配置
+radios="$(uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-device/\1/p')"
+[ -z "$radios" ] && radios="radio0 radio1 radio2 radio3"
+
+for radio in $radios; do
+    wifi_setup_radio "$radio"
+done
+
+# 提交无线配置
+uci commit wireless 2>/dev/null
+
+# 标记 WiFi 基础配置已完成
+if uci -q get base_config.@status[0] >/dev/null 2>&1; then
+    uci -q set base_config.@status[0].wifi=1
+    uci commit base_config 2>/dev/null
+fi
+
+# 重载无线网络
+if command -v wifi >/dev/null 2>&1; then
+    wifi reload
+elif [ -x /sbin/wifi ]; then
+    /sbin/wifi reload
+fi
+
+echo "[SUCCESS] 无线配置已更新并生效。"

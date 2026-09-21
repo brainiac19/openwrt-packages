@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opera-proxy
-PKG_VERSION:=1.29.0
-PKG_RELEASE:=6
+PKG_VERSION:=1.30.0
+PKG_RELEASE:=7
 
 PKG_MAINTAINER:=Konstantine Shevlakov <shevlakov@132lan.ru>
 PKG_LICENSE:=MIT

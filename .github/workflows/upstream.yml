@@ -222,6 +222,7 @@ jobs:
           git_clone https://github.com/hzyitc/mnh-openwrt && mvdir mnh-openwrt
           git_clone https://github.com/VizzleTF/luci-theme-footstrap footstrap && mv footstrap/luci-theme-footstrap ./ && rm -rf footstrap
           git_clone https://github.com/VizzleTF/luci-app-gitbackup tigb && mv -f tigb/*/*gitbackup ./;rm -rf tigb
+          git_clone https://github.com/VizzleTF/luci-app-footstrap-files footstrapf && mv -f footstrapf/luci-app-footstrap-files ./;rm -rf footstrapf
           ) &
           (
           git_clone https://github.com/kenzok8/openwrt-daede && mv -f openwrt-daede/*dae* ./;rm -rf openwrt-daede
@@ -232,7 +233,7 @@ jobs:
           git_clone https://github.com/linkease/istore-packages
           git clone https://github.com/laipeng668/luci-app-gecoosac gecoosac1 && mvdir gecoosac1
           git_clone https://github.com/eamonxg/luci-theme-shadcn
-          git_sparse_clone dashboard-customize "https://github.com/eamonxg/luci" modules/luci-mod-dashboard
+          git_sparse_clone dashboard-wireless-band "https://github.com/eamonxg/luci" modules/luci-mod-dashboard
           ) &
           (
           git_clone https://github.com/muink/luci-app-dnsproxy
@@ -452,7 +453,7 @@ jobs:
                -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
                -X POST -d '{ "query": "query {repository(owner: \"'"$1"'\", name: \"'"$2"'\"){latestRelease{tagName tagCommit{oid}}refs(refPrefix:\"refs/tags/\",last:1,orderBy:{field:TAG_COMMIT_DATE,direction:ASC}){edges{node{name target{oid}}}}defaultBranchRef{target{...on Commit {oid}}}}}"}' https://api.github.com/graphql)
           }
-          for pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|rtl8189es|sing-box|kaiplus|fastnet|torrserver|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do
+          for pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|rtl8189es|wwand|sing-box|kaiplus|fastnet|torrserver|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do
             repo="$(grep ^PKG_SOURCE_URL $pkg | grep github | cut -f 4-5 -d '/' | sed -e 's/.git//' | grep -E '[0-9a-zA-Z_-]+$')" || true
             if [ "$repo" ]; then
               owner="$(echo $repo | cut -f 1 -d '/')"

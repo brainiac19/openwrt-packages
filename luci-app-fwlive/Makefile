@@ -8,11 +8,11 @@ include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=Firewall Live View
 LUCI_DESCRIPTION:=Live firewall log table (firewall4/nft; iptables-tagged lines still classify) with filters
-LUCI_DEPENDS:=+luci-base +logd +jsonfilter
+LUCI_DEPENDS:=+luci-base +logd +jsonfilter +coreutils-timeout
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=0.1.46
-PKG_RELEASE:=23
+PKG_RELEASE:=24
 
 # Reproducible build: honor SOURCE_DATE_EPOCH from the build environment (set by docker-sdk.sh / CI).
 ifdef SOURCE_DATE_EPOCH
@@ -56,7 +56,7 @@ esac
 # Best-effort restore still exits 0 so a transient lock/pending-staging failure
 # cannot strand the package half-removed. The baseline is kept on failure for
 # admin recovery; helpers are still present while this prerm runs.
-restore_wan_log_baseline || logger -t fwlive "WAN log baseline restore failed during uninstall"
+restore_wan_log_baseline >/dev/null || logger -t fwlive "WAN log baseline restore failed during uninstall"
 exit 0
 endef
 

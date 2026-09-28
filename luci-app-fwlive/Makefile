@@ -12,7 +12,7 @@ LUCI_DEPENDS:=+luci-base +logd +jsonfilter +coreutils-timeout
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=0.1.46
-PKG_RELEASE:=24
+PKG_RELEASE:=25
 
 # Reproducible build: honor SOURCE_DATE_EPOCH from the build environment (set by docker-sdk.sh / CI).
 ifdef SOURCE_DATE_EPOCH
@@ -34,9 +34,10 @@ esac
 # the upgrade action arg.
 # A version-shaped $$1 with empty $$2 is APK uninstall (pre-deinstall).
 # Same-version APK reinstall uses post-upgrade and does not run this hook.
-# A version-changing APK upgrade is indistinguishable from uninstall at
-# this hook (both pass the old version as $$1). Do not claim that path
-# was lab-proven.
+# A version-changing APK upgrade also skips this hook: apk-tools 3.0
+# runs post-upgrade (PKG_UPGRADE=1) on the new package and pre-deinstall
+# only on uninstall (apk del). Lab-proven on OpenWrt 25.12.5
+# (apk-tools 3.0.5), 0.1.43-r1 -> 0.1.44-r1.
 [ "$${PKG_UPGRADE:-}" = 1 ] && exit 0
 case "$${2-}" in
 	remove) ;;

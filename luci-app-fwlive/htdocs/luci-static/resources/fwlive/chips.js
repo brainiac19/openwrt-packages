@@ -12,7 +12,7 @@
  *   state     - shallow copy: { filters, chipFields }
  *   callbacks - { onInvert(field, ev), onClear(field, ev), onClearAll(ev) }
  *
- * Chips use the labels presentation (include: "is", exclude: "not" + light ≠).
+ * Chips use the labels presentation (include: "is"/"contains", exclude: "not"/"does not contain" + light ≠).
  * Modules must not mutate state. host is cleared then rebuilt (idempotent replace).
  */
 
@@ -31,6 +31,12 @@ function chipValueNodes(spec, val) {
 	const valueNode = p.negate ? E('span', { 'class': 'fwlive-chip-strike' }, [p.value]) : p.value;
 
 	if (!p.negate) {
+		if (key === 'q' || key === 'src' || key === 'dst')
+			return [
+				E('span', { 'class': 'fwlive-chip-polarity' }, [_('contains')]),
+				' ',
+				log.formatFilterChipLabel(label, val)
+			];
 		return [
 			E('span', { 'class': 'fwlive-chip-polarity' }, [_('is')]),
 			' ',
@@ -72,6 +78,7 @@ function renderFilterChips(host, state, callbacks) {
 		if (!val) continue;
 
 		const parsed = log.parseFilterValue(val);
+		if (!parsed.value) continue;
 		const negated = parsed.negate;
 		const kids = [];
 		const lead = chipLeadingSym(negated);

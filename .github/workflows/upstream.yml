@@ -72,12 +72,13 @@ jobs:
           # git_clone https://github.com/kiddin9/openwrt-bypass && mvdir openwrt-bypass
           git_clone https://github.com/kiddin9/luci-app-dnsfilter
           git_clone https://github.com/kiddin9/aria2
-          git_clone https://github.com/kiddin9/luci-theme-edge
+          # git_clone https://github.com/kiddin9/luci-theme-edge
           git_clone https://github.com/kiddin9/luci-app-xlnetacc
           git_clone https://github.com/kiddin9/luci-app-wizard
           # git_clone https://github.com/rufengsuixing/luci-app-adguardhome
           git_clone https://github.com/kiddin9/luci-app-cloudreve
           git_clone https://github.com/kiddin9/openwrt-filebrowser && mvdir openwrt-filebrowser
+          git_clone https://github.com/kiddin9/luci-app-open-box
           # git_clone https://github.com/kiddin9/nginx-ui-openwrt && mvdir nginx-ui-openwrt
           ) &
           (
@@ -355,6 +356,12 @@ jobs:
           git_clone https://github.com/sbwml/luci-app-mentohust mentohust1 && mvdir mentohust1
           git_clone https://github.com/vernette/beszel-agent-openwrt && mvdir beszel-agent-openwrt
           # git_clone https://github.com/natpierce/luci-app-natpierce natpierce && mv natpierce/luci-app-natpierce ./;rm -rf natpierce
+          git_clone https://github.com/huchd0/luci-app-netwiz
+          ) &
+          (
+          git_clone https://github.com/vad-b/luci-app-tailscale-ng
+          git_clone https://github.com/Kingwong55/luci-app-tailscale
+          git_clone https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community tailscalec && mv -f tailscalec/luci-app* ./;rm -rf tailscalec
           ) &
           (
           git_sparse_clone revision https://github.com/Self-Hosting-Group/luci applications/luci-app-upnp
@@ -384,7 +391,7 @@ jobs:
           git_sparse_clone openwrt-25.12 "https://github.com/immortalwrt/immortalwrt" \
           package/kernel/rtl8189es package/emortal/autocore package/emortal/automount \
           package/emortal/cpufreq package/network/utils/fullconenat package/network/utils/fullconenat-nft \
-          package/utils/mhz package/utils/pcat-manager
+          package/utils/mhz package/utils/pcat-manager package/system/opkg
           ) &
           (
           git_sparse_clone master "https://github.com/x-wrt/com.x-wrt" luci-app-macvlan luci-app-xwan
@@ -399,6 +406,7 @@ jobs:
           git_sparse_clone chawrt/25.12 "https://github.com/liudf0716/luci" applications/luci-app-xkcptun applications/luci-app-apfree-wifidog
           git_sparse_clone chawrt/25.12 "https://github.com/liudf0716/packages" net/xkcptun net/apfree-wifidog
           ) &
+          git_sparse_clone master "https://github.com/openwrt/packages" net/shunt
           git_sparse_clone master "https://github.com/immortalwrt/packages" net/n2n net/qbittorrent \
           net/amule net/cdnspeedtest net/minieap net/ddns-go net/sysuh3c net/3proxy utils/filebrowser net/cloudreve \
           net/go-nats net/go-wol net/bitsrunlogin-go net/transfer net/udp2raw net/msd_lite net/rtp2httpd \
@@ -471,7 +479,7 @@ jobs:
                -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
                -X POST -d '{ "query": "query {repository(owner: \"'"$1"'\", name: \"'"$2"'\"){latestRelease{tagName tagCommit{oid}}refs(refPrefix:\"refs/tags/\",last:1,orderBy:{field:TAG_COMMIT_DATE,direction:ASC}){edges{node{name target{oid}}}}defaultBranchRef{target{...on Commit {oid}}}}}"}' https://api.github.com/graphql)
           }
-          for pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|rtl8189es|wwand|sing-box|kaiplus|fastnet|torrserver|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do
+          for pkg in $(ls !(luci-*|nikki|mihomo*|dockermanager|rtl8189es|wwand|sing-box|kai*|fastnet|linkease*|torrserver|baidudrive|openwrt-einat-ebpf|qBittorrent-Enhanced-Edition|tuic-client|glorytun|dae|daed|shadowsocks-libev|mosdns|spotifyd|miniupnpd|openwrt-Toolkit|libdouble-conversion|wxbase|3proxy|ucode|mergerfs|openwrt-nezhav1|homebox|sub-web|tcptraceroute|frp|openwrt-caddy|mentohust|brlaser|rapidjson|smartdns|hysteria|gecoosac|libcryptopp|naiveproxy|rustdesk-server|shadowsocksr-libev|tuic-server|joker|ps3netsrv|natter|netmaker|openwrt-ympd|subconverter|sms-tool)/Makefile); do
             repo="$(grep ^PKG_SOURCE_URL $pkg | grep github | cut -f 4-5 -d '/' | sed -e 's/.git//' | grep -E '[0-9a-zA-Z_-]+$')" || true
             if [ "$repo" ]; then
               owner="$(echo $repo | cut -f 1 -d '/')"

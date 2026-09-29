@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0-r2] - 修复 vmess 加密方式与 TLS 层混淆
+
+- **修复严重缺陷**：经典 vmess 分享链接 `vmess://base64(json)` 的 `scy` 是**加密方式**
+  （`auto` / `aes-128-gcm` / `chacha20-poly1305` / `none` / `zero`），`tls` 才是 **TLS 层**
+  （`"tls"` 启用，`""` 不启用）。解析器此前把 `scy` 写进了统一模型的 `security` 字段，
+  而该字段在项目其余各处一律表示 TLS 层（`node.lua` DEFAULTS、vless/trojan URI 的
+  `security=`、Xray `streamSettings.security`、Clash `tls: true`）
+  - 后果：**一个不启用 TLS 的节点被三个目标同时误判为启用 TLS**，而这是机场订阅最常见的形态
+    - sing-box 多出 `"tls": {}`，同时 `security` 被写成加密方式
+    - V2Ray `streamSettings.security: "auto"` —— **非法取值，Xray 会拒绝启动**
+    - Clash.Meta 多出 `tls: true`；Surge 家族多出 `tls=true`
+  - 统一模型新增 `cipher` 字段专表 vmess 加密方式，`security` 回归纯 TLS 层语义
+  - 解析侧：`parser.lua` 经典 vmess JSON 改为 `cipher = scy`、`security` 由 `tls` 推导；
+    `parser_json_config.lua` 的 sing-box 导入改为 vmess 的 `security` → `cipher`，
+    TLS 由 `tls` 对象表达（并补齐 `alpn` / `insecure` → `skip-cert-verify` 的反向映射）；
+    `parser.lua` 简易 YAML 回退路径同步修正
+  - 输出侧：`output_singbox.lua` / `output_v2ray.lua` / `output_uri.lua` 的 vmess 加密方式
+    改取 `cipher`；`output_clash_meta.lua` 原本就取 `cipher`，此前因 `cipher` 从未被写入而
+    恒回退到 `auto`（`cipher: aes-128-gcm` 这类非默认值会被静默丢弃，本次一并修复）
+- **修复 `tls` 字段的真值陷阱**：空串 `""` 在 Lua 中为真值，`tls: ""`（经典 vmess JSON 表示
+  「不启用 TLS」的标准写法）会被 `output_formats.lua` / `output_clash_meta.lua` 的
+  `if node.tls then` 误判为启用 TLS。`node.normalize` 现将 `""` / `"none"` / `"false"`
+  归一为 `nil`、`"true"`（简易 YAML 解析器的字符串布尔）归一为 `true`，并把 `tls` 统一
+  落到权威字段 `security`
+- **非法加密方式不再写入配置**：新增 `node.VMESS_CIPHERS` 白名单，非白名单取值
+  （如被第三方工具误写成 `"tls"` 的）在归一化时丢弃，输出端回退到 `auto`，
+  避免生成客户端拒绝加载的配置
+- 新增测试 `tests/vmess_cipher_test.lua`（47 项），覆盖上述全部路径与分享链接回环
+- 版本号 2.4.0-r1 → 2.4.0-r2；README.md / README.en.md / docs/INSTALL.md 同步
+
+## [2.4.0-r1] - sing-box / V2Ray 输出完整配置
+
+- ⚠️ **破坏性变更**：`target=singbox` 与 `target=v2ray` 由「仅含 `outbounds` 的片段」
+  改为「`outbounds` + 分流的完整可用配置」。2.3.x 的片段需粘进已有配置使用；
+  2.4.0 起可直接作为单文件配置启动。已粘进客户端的老链接会拿到不同结构，请重新导出。
+- sing-box 完整配置（`output_singbox.lua`）
+  - 节点出站 + `selector`（tag `select`，供手工切换）+ `urltest`（tag `auto`，自动测速）
+    + `direct` / `block`
+  - `route.final` 指向 `select`；内置 `ip_is_private` → `direct` 私网直连规则；
+    `auto_detect_interface` 开启
+  - **刻意省略 route 规则的 `action` 字段**：该字段自 sing-box 1.11.0 起才存在，其默认值
+    即 `"route"`。sing-box 会拒绝未知字段，而省略默认值在 1.10 与 1.11+ 上都能工作
+  - 无可用节点时不生成 `selector` / `urltest`（其 `outbounds` 不允许为空），`final` 退回 `direct`
+- V2Ray / Xray 完整配置（`output_v2ray.lua`）
+  - 节点出站 + `freedom`(tag `direct`) / `blackhole`(tag `block`) + `log`
+  - `observatory`（`subjectSelector` / `probeUrl` / `probeInterval`）+ `routing.balancers`
+    （tag `auto`，`leastPing`）——`leastPing` 必须依赖 observatory 的探测结果才会生效
+  - `routing.rules`：`geoip:private` → `direct`，其后 `tcp,udp` 兜底 → `balancerTag: auto`；
+    `domainStrategy` 为 `IPIfNonMatch`
+  - 无可用节点时改为 `outboundTag: direct` 兜底，且不生成 `balancers` / `observatory`
+- 两者均**不含 `inbounds` / `dns`**：会绑定本地监听端口、覆盖用户既有 DNS 设置，交由用户维护
+- 修复 `util.json_encode` 无法表达空对象：Lua 空表经 `is_array` 判定会被编码成 `[]`，
+  而 sing-box 的 `tls`、Xray 的 `settings` 必须是对象。新增 `util.JSON_EMPTY_OBJECT` 占位符
+  - 由此修复一处既有缺陷：sing-box 节点 `security=tls` 但无 `sni` / `alpn` 时会产出非法的 `"tls":[]`
+- 新增 `util.unique_tags(nodes, reserved)`：sing-box 与 Xray 均要求 outbound tag 唯一，
+  节点重名（订阅里很常见）或与保留 tag（`direct` / `block` / `select` / `auto`）同名时
+  自动追加 ` #2`、` #3`
+  - Xray 的 balancer / observatory `selector` 按**前缀**匹配 tag，因此额外把保留 tag 的
+    所有真前缀也登记为冲突——否则名为 `d` 的节点会让 `direct` 出站被误纳入负载均衡
+- 导出结果可重新导入：完整配置里的 `selector` / `urltest` / `direct` / `block` /
+  `freedom` / `blackhole` 会被解析器正确跳过，只取真实节点（已加往返测试）
+- 新增测试 `tests/output_full_config_test.lua`（82 项）
+- `tests/output_formats_test.lua` / `tests/ssr_test.lua` 更新为断言「不含 ssr 出站」
+  而非「outbounds 为空」，适配完整配置语义
+- 版本号 2.3.0-r2 → 2.4.0-r1；README.md / README.en.md / docs/INSTALL.md 同步
+
+## [2.3.0-r2] - 新增 Clash 原版与 WireGuard .conf 输出，输出层清理
+
+- 新增输出格式 **WireGuard / AmneziaWG `.conf`**（`target=wgconf`，别名 `wg` / `wireguard` / `amneziawg` / `amnezia` / `conf`）
+  - 与 `parser.parse_wireguard_conf` 互为逆操作：输出 `[Interface]` / `[Peer]` 标准 wg-quick 配置
+  - `[Interface]`：PrivateKey / Address（IPv4 + IPv6 合并）/ ListenPort / MTU / DNS / AmneziaWG 参数（键名首字母大写，按键名排序保证可 diff）
+  - `[Peer]`：PublicKey / PresharedKey / AllowedIPs / Endpoint / PersistentKeepalive
+  - IPv6 Endpoint 自动加方括号（`[2001:db8::1]:51821`）
+  - 仅输出 wireguard 节点；无 wireguard 节点时明确报错（而非下载到空文件）
+  - 已知有损项：`Reserved` 不是 wg-quick 标准键，导出时不写出（`reserved` 仍保留在 clash.meta / sing-box / URI 输出中）
+  - 新增模块 `root/usr/share/substore/output_wireguard_conf.lua`
+- 新增输出格式 **Clash 原版**（`target=clash`），面向 Dreamacro Clash / ClashX / Clash for Windows
+  - 过滤原版不支持的协议（vless / hysteria2 / hysteria / tuic / wireguard），其余复用 Clash.Meta 的 YAML 生成
+  - 采用排除法而非白名单，避免误丢原版其实支持的协议
+- ⚠️ **行为变更**：`target=clash` 语义由「Clash.Meta」改为「Clash 原版」。原先使用 `?target=clash` 拉取 Clash.Meta 配置的用户请改用 `target=clashmeta`（或 `yaml` / `mihomo`）
+- ⚠️ **行为变更（无感）**：未指定 `target` 时的默认格式显式固定为 `clashmeta`，与历史默认行为一致
+- 输出层清理（`output.lua`）
+  - 删除死代码 `to_clash_yaml` / `to_json` / `to_base64`（无任何调用点；且 `to_clash_yaml` 会把 `type:` 写成原始协议名，产出非法 YAML）
+  - 删除随之失效的 `util` / `node` require
+  - 新增 `M.FORMAT_OPTIONS` 作为格式清单的唯一数据源，`subscriptions.htm` 与 `output.htm` 两处硬编码 `<option>` 列表改为遍历生成，避免新增格式时漏改模板
+  - 默认格式提取为 `DEFAULT_FORMAT` 常量，供 content-type / 扩展名 / 生成三处共用
+- 新增测试 `tests/output_new_formats_test.lua`（66 项）：格式注册表一致性（每个 UI 选项都有别名、content-type、扩展名与分发分支）、Clash 原版协议过滤、`.conf` 结构与 AmneziaWG 键排序、IPv6 方括号、无 wireguard 报错、`.conf` 导出 → 重新导入的完整往返
+- `tests/core_link_test.lua` 的目标格式列表改为从 `output.FORMAT_OPTIONS` 派生，新增格式自动纳入覆盖
+- 版本号 2.3.0-r1 → 2.3.0-r2；README.md / README.en.md / docs/INSTALL.md 同步（输出格式 13 → 15 种）
+
+## [2.3.0-r1] - wg-quick / AmneziaWG .conf 导入与导出修复
+
+- 新增 wg-quick / AmneziaWG `.conf` 文本导入：解析 `[Interface]` / `[Peer]` 分段
+  - `[Interface]`：PrivateKey / Address（自动区分 IPv4 与 IPv6）/ ListenPort / MTU / DNS
+  - `[Peer]`：PublicKey / PresharedKey / AllowedIPs（拆分为数组）/ PersistentKeepalive / Endpoint（拆出 server + port，支持 `[v6]:port`）
+  - AmneziaWG 参数（Jc/Jmin/Jmax/S1–S4/H1–H4/I1–I5/J1–J3/Itime）按白名单映射到 `amnezia-wg-option`，未知键丢弃（不猜语义）
+  - 键名大小写不敏感，支持 `#` / `;` 注释；缺少 Endpoint 时明确报错而非产出半成品节点
+  - 本地订阅文本导入与远程订阅下载同时生效（无需改 sync 流程）
+- 修复 P1 引入的数组输出缺陷：clash.meta 的 `allowed-ips` / `reserved` / `dns` 值为数组时改用 YAML 列表输出，不再产生 `table: 0x...`
+- 修复 sing-box `local_address`：同时有 IPv4/IPv6 时输出数组，不再逗号拼接（非法值）
+- `amnezia-wg-option` 子块按键名排序输出，同一节点每次导出结果一致，便于 diff
+- 修复 `parser_clash_yaml` 列表项误判：`- "::/0"` 等引号标量含冒号时不再被解析成 table
+- 补全 sing-box / Clash JSON 导入：`local_address` 数组拆分、`persistent_keepalive_interval`、`listen_port`、`amnezia-wg-option`
+- 新增 `listen-port` 字段贯通全链路（表单 / FORM_KEYS / clash.meta / sing-box / URI 输出）
+- 新增测试 `tests/wireguard_conf_test.lua`（61 项）、`tests/amnezia_wg_test.lua`（67 项）
+- 版本号 2.2.0-r5 → 2.3.0-r1；README.md / README.en.md / docs/INSTALL.md 同步
+
+## [2.2.0-r5] - WireGuard 完整字段与 AmneziaWG 支持
+
+- WireGuard 节点补全字段：public-key/pre-shared-key/ip/ipv6/allowed-ips/reserved/persistent-keepalive/mtu/dns/amnezia-wg-option
+- Clash Meta 导出字段名修正为 public-key/pre-shared-key，补齐 ip/allowed-ips 等必填项，支持 amnezia-wg-option 子块全量输出
+- sing-box 导出修正 pre_shared_key，补齐 local_address/reserved/persistent_keepalive_interval
+- parser 补读 WireGuard 扩展字段，兼容旧名 peer-public-key/preshared-key
+- core FORM_KEYS 补入 WireGuard 扩展字段，避免表单编辑后丢失
+- nodeform.js PROTO_FIELDS.wireguard 扩充，表单显示完整字段
+- local_form.htm / node_edit.htm FIELD_LABELS 补入 WireGuard 扩展字段标签
+- parser_clash_yaml 补内联数组解析，支持 reserved/allowed-ips
+- output_clash_meta esc_yaml 修复 find 平文匹配 bug
+- 版本号 2.2.0-r4 → 2.2.0-r5；README/INSTALL 同步
+
+## [2.2.0-r4] - 节点协议标签统一为 Type / 类型
+
+- 节点列表页筛选标签与表头由 `Protocol / 协议` 统一改为 `Type / 类型`
+- 节点编辑 / 本地订阅表单导入的协议选择标签由 `Protocol` 改为 `Type`，中文显示为“类型”
+- `nodeform.js` 标签键由 `protocol` 改为 `type`，与下拉框 `data-k="type"` 一致
+- `local_form.htm` / `node_edit.htm` 的 `FIELD_LABELS` 由 `"protocol": "<%:Protocol%>"` 改为 `"type": "<%:Type%>"`
+- 版本号 2.2.0-r3 → 2.2.0-r4；README.md / README.en.md / docs/INSTALL.md 版本同步
+
+## [2.2.0-r3] - 节点表单导入字段语言混合优化
+
+- 「添加本地订阅」表单导入 /「编辑节点」页：名称 / 分组 / 协议保持系统语言（中/英切换），其余技术参数字段固定为英文（Server / Port / Password / Cipher / Method / Security / Network / Header Type / Path / Obfs / Obfs Param / Obfs Password / Protocol Param / Skip Cert Verify / Private Key / Peer Public Key），与 Clash YAML / 分享链接字段名保持一致，提升可对照性
+
 ## [2.2.0-r2] - 节点页按钮顺序调整
 
 - 「节点」页「筛选」后的「刷新」「删除」按钮位置互换（现为：筛选 | 删除 | 刷新）

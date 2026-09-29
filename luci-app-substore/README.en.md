@@ -23,16 +23,22 @@ group them, then re-emit them in a format your client can consume.
   (optionally with keyword include / exclude and dedup rules) into one combination that
   has its own name, token and subscription link; combinations are recomputed automatically
   when a source updates
-- **Local subscription**: no URL needed — paste node text (mixed YAML / URI / JSON) or
-  enter nodes one by one via a form whose fields adapt to the selected protocol
+- **Local subscription**: no URL needed — paste node text (mixed YAML / URI / JSON /
+  wg-quick `.conf`) or enter nodes one by one via a form whose fields adapt to the
+  selected protocol
   (vmess / vless / ss / ssr / trojan / hysteria2 / tuic / wireguard / socks)
 
 **Input parsing**
 - Subscription formats: URI lists, Base64, JSON, Clash YAML, sing-box JSON,
-  V2Ray / Xray JSON, Surge / Surfboard / Loon / Quantumult X configs, and LAN
-  subscription links
+  V2Ray / Xray JSON, Surge / Surfboard / Loon / Quantumult X configs, LAN
+  subscription links, and wg-quick / AmneziaWG `.conf`
 - Node protocols: `vmess` / `vless` / `trojan` / `shadowsocks` / `ssr` / `hysteria2` /
   `tuic` / `socks` (and more)
+- **WireGuard / AmneziaWG**: full field import and export (`private-key` / `public-key` /
+  `pre-shared-key` / `ip` / `ipv6` / `allowed-ips` / `reserved` / `persistent-keepalive` /
+  `listen-port` / `mtu` / `dns`) plus the `amnezia-wg-option` sub-block
+  (Jc / Jmin / Jmax / S1–S4 / H1–H4 / I1–I5 / J1–J3 / Itime); you can paste the contents
+  of a `.conf` file exported by an AmneziaWG client directly
 
 **Node processing**
 - Browse nodes, filter by group / protocol, keyword search, sort
@@ -54,9 +60,27 @@ group them, then re-emit them in a format your client can consume.
 - SSR (`ssr://`) input is re-emitted losslessly to SSR-capable clients only — Mihomo /
   Clash.Meta, Stash, Loon, Egern, Shadowrocket — and dropped for the rest (sing-box,
   V2Ray/Xray, Surge family), since SSR is not convertible to/from other protocols
-- 13 output formats (all implemented): Plain JSON, Stash, Clash.Meta / Mihomo YAML,
-  Surfboard, Surge, Surge Mac, Loon, Egern, Shadowrocket, Quantumult X, sing-box,
-  V2Ray / Xray, V2Ray URI
+- 15 output formats (all implemented): Plain JSON, Stash, Clash.Meta / Mihomo YAML,
+  Clash (original), Surfboard, Surge, Surge Mac, Loon, Egern, Shadowrocket,
+  Quantumult X, sing-box, V2Ray / Xray, V2Ray URI, WireGuard / AmneziaWG `.conf`
+  - **Clash (original)**: for Dreamacro Clash / ClashX / Clash for Windows; protocols the
+    original does not support (vless / hysteria2 / hysteria / tuic / wireguard) are filtered out
+  - **WireGuard / AmneziaWG `.conf`**: wg-quick single-interface config with `[Interface]` /
+    `[Peer]` sections and AmneziaWG obfuscation parameters, importable by AmneziaWG clients
+  - **sing-box / V2Ray (Xray)**: emits a **complete, runnable config** (`outbounds` plus
+    routing), not just an `outbounds` fragment
+    - sing-box: node outbounds + `selector` (manual switch) + `urltest` (auto latency test) +
+      `direct` / `block`; `route.final` points at the selector, with a built-in private-IP
+      direct rule
+    - V2Ray/Xray: node outbounds + `freedom` (direct) / `blackhole` (block) + `observatory` +
+      `routing.balancers` (`leastPing` auto-selection), with built-in `geoip:private` direct
+      and a catch-all route
+    - Deliberately **excludes `inbounds` / `dns`**: those bind local listening ports and
+      override your existing DNS settings — keep them in your own config and merge this
+      output into it
+    - ⚠️ Not compatible with 2.3.x: 2.3.x emitted an `outbounds`-only fragment meant to be
+      pasted into an existing config; from 2.4.0 it is a complete config you can start
+      directly as a single file
 
 **Subscription links**
 - Per-subscription random token → public download endpoint
@@ -69,18 +93,18 @@ group them, then re-emit them in a format your client can consume.
 ## Installation
 
 > The version in the package name must match `PKG_VERSION` / `PKG_RELEASE` in the
-> [Makefile](Makefile) (currently `2.2.0-r2`).
+> [Makefile](Makefile) (currently `2.4.0-r2`).
 
 opkg (OpenWrt / ImmortalWrt 24.10 and earlier):
 
 ```bash
-opkg install luci-app-substore-2.2.0-r2.ipk
+opkg install luci-app-substore-2.4.0-r2.ipk
 ```
 
 apk (OpenWrt / ImmortalWrt 25.12+):
 
 ```bash
-apk add --allow-untrusted luci-app-substore-2.2.0-r2.apk
+apk add --allow-untrusted luci-app-substore-2.4.0-r2.apk
 ```
 
 Then open LuCI: **Services → Subscriptions**.
@@ -94,7 +118,7 @@ Then open LuCI: **Services → Subscriptions**.
 3. **Browse nodes** — filter (group / protocol / keyword), sort, probe latency; tick
    checkboxes and hit Delete for batch deletion, edit / delete / regroup in-row, and
    Refresh reloads the list.
-4. **Export** — pick one of the 13 output formats, or copy the subscription link
+4. **Export** — pick one of the 15 output formats, or copy the subscription link
    to feed a downstream client (Passwall / OpenClash / …).
 
 ## Project layout

@@ -1,0 +1,110 @@
+diff --git a/meow/Makefile b/meow/Makefile
+new file mode 100644
+index 0000000..76c1656
+--- /dev/null
++++ b/meow/Makefile
+@@ -0,0 +1,104 @@
++#
++# meow —— OpenWrt 包定义
++#
++# 本文件由 patches/0001-*.patch 提供；meow/ 下其余文件全部来自上游快照
++# upstream/openwrt/meow/，由 scripts/apply-patches.sh 生成，请勿手工维护。
++#
++# 本包使用上游 release 提供的 aarch64 静态 musl 二进制，不在 Buildroot 内交叉编译 Rust。
++# 上游 release 版本需要在发布新版本时手工更新下列 PKG_* 字段。
++#
++include $(TOPDIR)/rules.mk
++
++MEOW_UPSTREAM_REPO:=meow-rs/meow-rs
++MEOW_VERSION:=0.21.2
++
++PKG_NAME:=meow
++PKG_VERSION:=$(MEOW_VERSION)
++PKG_RELEASE:=1
++
++PKG_SOURCE:=meow-v$(MEOW_VERSION)-aarch64-unknown-linux-musl.tar.gz
++PKG_SOURCE_URL:=https://github.com/$(MEOW_UPSTREAM_REPO)/releases/download/v$(MEOW_VERSION)
++PKG_HASH:=7966b35ee2101e32406009f074f97cbbcc8017489daa02cd3fc5b91b4dbcbfeb
++
++PKG_LICENSE:=MIT
++PKG_MAINTAINER:=zow2023 <https://github.com/zow2023/luci-app-meow>
++
++include $(INCLUDE_DIR)/package.mk
++
++define Package/meow
++  SECTION:=net
++  CATEGORY:=Network
++  SUBMENU:=Web Servers/Proxies
++  TITLE:=meow - a mihomo (Clash Meta) compatible proxy kernel in Rust
++  URL:=https://github.com/$(MEOW_UPSTREAM_REPO)
++  DEPENDS:=+libc
++endef
++
++define Package/meow/description
++ meow 是 mihomo (Clash Meta) 的 Rust 实现：规则分流、透明代理 (TPROXY/REDIRECT)、
++ DNS snooping 与 DNS 劫持、REST API、内置 Web 面板。
++ 本包使用上游 release 提供的 aarch64 静态 musl 二进制，不在 Buildroot 内重新编译 Rust。
++ 透明代理 / 网关模式需自行选中内核模块：kmod-nft-tproxy kmod-nft-socket
++endef
++
++# 预编译二进制：解包即可；上游 tarball 内部布局变化时自动定位二进制
++define Build/Prepare
++	$(call Build/Prepare/Default)
++	if [ ! -f $(PKG_BUILD_DIR)/meow ]; then \
++		BIN=$$(find $(PKG_BUILD_DIR) -type f -name meow | head -n1); \
++		[ -n "$$BIN" ] || { echo "ERROR: $(PKG_SOURCE) 内未找到 meow 二进制"; exit 1; }; \
++		install -m 0755 "$$BIN" $(PKG_BUILD_DIR)/meow; \
++	fi
++endef
++
++define Build/Compile
++endef
++
++define Package/meow/install
++	$(INSTALL_DIR) $(1)/usr/bin
++	$(INSTALL_BIN) $(PKG_BUILD_DIR)/meow $(1)/usr/bin/meow
++
++	$(INSTALL_DIR) $(1)/etc/init.d
++	$(INSTALL_BIN) ./files/meow.init $(1)/etc/init.d/meow
++	$(INSTALL_BIN) ./files/meow-arp.init $(1)/etc/init.d/meow-arp
++
++	$(INSTALL_DIR) $(1)/etc/config
++	$(INSTALL_CONF) ./files/meow.config $(1)/etc/config/meow
++
++	$(INSTALL_DIR) $(1)/etc/meow
++	$(INSTALL_CONF) ./files/config.yaml $(1)/etc/meow/config.yaml
++
++	$(INSTALL_DIR) $(1)/usr/share/meow
++	$(INSTALL_BIN) ./files/gateway.sh $(1)/usr/share/meow/gateway.sh
++	$(INSTALL_BIN) ./files/arp-hijack.sh $(1)/usr/share/meow/arp-hijack.sh
++
++	$(INSTALL_DIR) $(1)/etc/uci-defaults
++	$(INSTALL_BIN) ./files/meow.uci-defaults $(1)/etc/uci-defaults/80_meow
++endef
++
++define Package/meow/conffiles
++/etc/config/meow
++/etc/meow/config.yaml
++endef
++
++define Package/meow/postinst
++#!/bin/sh
++[ -n "$${IPKG_INSTROOT}" ] && exit 0
++[ -f /etc/uci-defaults/80_meow ] && { sh /etc/uci-defaults/80_meow; rm -f /etc/uci-defaults/80_meow; }
++/etc/init.d/meow enable || true
++# meow-arp 自身按 (默认关闭的) arp_hijack 段自锁，启用它不会真的引流
++/etc/init.d/meow-arp enable || true
++exit 0
++endef
++
++define Package/meow/prerm
++#!/bin/sh
++[ -n "$${IPKG_INSTROOT}" ] && exit 0
++/etc/init.d/meow-arp stop 2>/dev/null || true
++/etc/init.d/meow-arp disable 2>/dev/null || true
++/etc/init.d/meow stop 2>/dev/null || true
++/etc/init.d/meow disable 2>/dev/null || true
++exit 0
++endef
++
++$(eval $(call BuildPackage,meow))

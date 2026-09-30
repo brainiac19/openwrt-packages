@@ -303,7 +303,12 @@ lookup_mac() {
 lookup_blocked() {
     local ip="$1"
     if [ "$TCTL_FW" = "nft" ]; then
-        echo "$FWD_DUMP" | grep -q "ip saddr $ip .*drop" && echo 1 || echo 0
+        echo "$FWD_DUMP" | grep -q "ip saddr $ip .*drop" && { echo 1; return; }
+        # The IPv6 half of a block matches a MAC and carries no address, so it
+        # is found by its own full comment. Without this the table reports "not
+        # blocked" for a device whose v6 rule is the only one left standing.
+        echo "$FWD_DUMP" | grep -qF "comment \"$(tctl_block_comment "$ip")_mac\"" \
+            && echo 1 || echo 0
     else
         echo "$FWD_DUMP" | awk -v ip="$ip" '
             $3 == "DROP" {
@@ -320,7 +325,13 @@ lookup_blocked() {
 lookup_block_bytes() {
     local ip="$1" b
     if [ "$TCTL_FW" = "nft" ]; then
-        b=$(echo "$FWD_DUMP" | grep "ip saddr $ip " | grep -oE 'bytes [0-9]+' | awk '{print $2}' | head -1)
+        # Both halves of the block, summed: the v4 rule keyed on the address
+        # and the v6 rule keyed on the MAC. Counting only the first would make
+        # a dual-stack device's dropped bytes read low for the same reason the
+        # traffic used to escape entirely.
+        b=$(echo "$FWD_DUMP" | grep -e "ip saddr $ip " \
+                -e "comment \"$(tctl_block_comment "$ip")_mac\"" \
+            | grep -oE 'bytes [0-9]+' | awk '{ t += $2 } END { printf "%.0f", t }')
     else
         b=$(echo "$FWD_DUMP" | awk -v ip="$ip" '
             $3 == "DROP" {
@@ -436,16 +447,21 @@ for ip in $ACTIVE_IPS; do
         fi
     fi
 
+    # Needs CONN_TYPE, so it is decided here rather than next to WIFI_BLK.
+    WIFI_PENDING=0
+    tctl_wifi_block_pending "$WIFI_BLK" "$CONN_TYPE" && WIFI_PENDING=1
+
     if [ "$FIRST" = "1" ]; then
         FIRST=0
     else
         printf ","
     fi
-    printf '{"ip":"%s","name":"%s","mac":"%s","conn_type":"%s","conn_last":"%s","app":"%s","conns":%d,"total":%.0f,"tcp":%.0f,"udp":%.0f,"blocked":%s,"block_bytes":%.0f,"wifi_blocked":%s,"rate_limit_kbit":%.0f,"shape_kbit":%.0f}' \
+    printf '{"ip":"%s","name":"%s","mac":"%s","conn_type":"%s","conn_last":"%s","app":"%s","conns":%d,"total":%.0f,"tcp":%.0f,"udp":%.0f,"blocked":%s,"block_bytes":%.0f,"wifi_blocked":%s,"wifi_block_pending":%s,"rate_limit_kbit":%.0f,"shape_kbit":%.0f}' \
         "$ip" "$NAME" "$MAC" "$CONN_TYPE" "$CONN_LAST" "$APP" "$CONNS" "$TOTAL" "$TCP" "$UDP" \
         "$([ "$BLOCKED" = "1" ] && echo true || echo false)" \
         "$BLOCK_BYTES" \
         "$([ "$WIFI_BLK" = "1" ] && echo true || echo false)" \
+        "$([ "$WIFI_PENDING" = "1" ] && echo true || echo false)" \
         "$RATE_LIM" "$SHAPE"
 done
 printf "]\n"

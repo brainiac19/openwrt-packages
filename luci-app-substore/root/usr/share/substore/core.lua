@@ -7,7 +7,7 @@ local parser = require("substore.parser")
 
 local M = {}
 
-M.version = "2.1.3"
+M.version = "2.6.0"
 M.DATA_DIR = "/etc/substore"
 M.LIST_FILE = M.DATA_DIR .. "/subscriptions.json"
 M.NODES_DIR = M.DATA_DIR .. "/nodes"
@@ -25,12 +25,21 @@ function M.ensure_dirs()
 	util.ensure_dir(M.NODES_DIR)
 end
 
+-- 读取订阅列表，返回 seq, items, err。
+--
+-- 必须区分「文件不存在 / 为空」（合法的空列表）与「文件存在但解析失败」
+-- （内容损坏、被截断、磁盘错误）。后者若按空列表处理，后果是灾难性的：
+-- M.add / M.add_local / M.add_combo 会在这个空表上追加一条然后整表写回，
+-- 把用户已有的全部订阅抹掉，并且 _seq 归零后重新发出 s00000001 这种
+-- 已经用过的 ID。因此损坏时必须显式报错，由调用方拒绝写入。
 local function load()
 	M.ensure_dirs()
 	local raw = util.read_file(M.LIST_FILE)
 	if not raw or raw == "" then return 0, {} end
 	local data = util.json_decode(raw)
-	if type(data) ~= "table" then return 0, {} end
+	if type(data) ~= "table" then
+		return 0, {}, "订阅列表文件已损坏，无法解析：" .. M.LIST_FILE
+	end
 	local seq = tonumber(data._seq) or 0
 	local items = type(data.items) == "table" and data.items or {}
 	return seq, items
@@ -41,8 +50,11 @@ local function save(seq, items)
 	return util.atomic_write(M.LIST_FILE, util.json_encode({ _seq = seq, items = items }))
 end
 
+-- 返回 arr, err。err 非空表示列表文件已损坏（此时 arr 为空）。
+-- 追加第二个返回值是向后兼容的：调用方普遍写成 ipairs(core.list()) 或
+-- local items = core.list()，都只取第一个值。
 function M.list()
-	local _, items = load()
+	local _, items, lerr = load()
 	local arr = {}
 	for id, meta in pairs(items) do
 		local m = {}
@@ -51,7 +63,7 @@ function M.list()
 		arr[#arr + 1] = m
 	end
 	table.sort(arr, function(a, b) return (a.name or "") < (b.name or "") end)
-	return arr
+	return arr, lerr
 end
 
 function M.get(id)
@@ -70,7 +82,8 @@ function M.add(name, url, opts)
 	url = util.trim(url or "")
 	opts = opts or {}
 	if name == "" or url == "" then return nil, "名称/URL 不能为空" end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return nil, lerr end
 	seq = seq + 1
 	local id = string.format("s%08x", seq)
 	local cron_time = util.trim(opts.cron_time or "")
@@ -103,7 +116,8 @@ function M.add_local(name, raw_content, local_mode, opts)
 	local_mode = local_mode or "text"
 	opts = opts or {}
 	if name == "" or raw_content == "" then return nil, "名称/内容 不能为空" end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return nil, lerr end
 	seq = seq + 1
 	local id = string.format("s%08x", seq)
 	items[id] = {
@@ -131,7 +145,8 @@ end
 -- 获取订阅的下载 token；若不存在则生成并持久化
 function M.ensure_token(id)
 	if not id_is_valid(id) then return nil end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return nil end
 	local meta = items[id]
 	if not meta then return nil end
 	if not meta.token or meta.token == "" then
@@ -171,20 +186,27 @@ function M.generate_link(token, target, opts)
 	return content, ct, filename, nil
 end
 
+-- save_meta 补丁里的「清除」哨兵值。
+-- Lua 的 pairs 永远不会产出值为 nil 的键，所以补丁表里写 `k = nil` 等于什么都没写，
+-- 调用方无法表达「把这个字段删掉」。需要清除时传 M.CLEAR，save_meta 会还原成 nil。
+M.CLEAR = setmetatable({}, { __tostring = function() return "substore.CLEAR" end })
+
 function M.save_meta(id, patch)
 	if not id_is_valid(id) then return false, "非法 ID" end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return false, lerr end
 	local meta = items[id]
 	if not meta then return false, "订阅不存在" end
 	for k, v in pairs(patch or {}) do
-		if v == nil then meta[k] = nil else meta[k] = v end
+		if v == nil or v == M.CLEAR then meta[k] = nil else meta[k] = v end
 	end
 	return save(seq, items)
 end
 
 function M.remove(id)
 	if not id_is_valid(id) then return false end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return false, lerr end
 	if not items[id] then return false end
 	items[id] = nil
 	save(seq, items)
@@ -227,7 +249,7 @@ end
 
 -- 下载并解析订阅，写入节点文件并更新状态。成功返回 node_count，失败返回 nil, err
 function M.sync(id)
-	local log = function(msg) os.execute("logger -t luci-app-substore " .. string.format("%q", msg)) end
+	local log = function(msg) os.execute("logger -t luci-app-substore " .. util.shq(msg)) end
 	log("Sync start id="..tostring(id))
 	local meta = M.get(id)
 	if not meta then log("Sync fail: subscription not found"); return nil, "订阅不存在" end
@@ -243,13 +265,14 @@ function M.sync(id)
 		log("Sync local subscription")
 		local content = meta.raw_content or ""
 		if content == "" then
-			M.save_meta(id, { error = "本地订阅内容为空", node_count = 0, last_update = os.time() })
+			-- 失败路径一律不改 node_count：磁盘上的旧节点仍在，订阅链接仍在下发（§35）
+			M.save_meta(id, { error = "本地订阅内容为空", last_update = os.time() })
 			return nil, "本地订阅内容为空"
 		end
 		local res, perr = parser.parse_local(content, meta.local_mode or "text")
 		if not res or not res.nodes then
 			log("Parse local fail: " .. tostring(perr))
-			M.save_meta(id, { error = perr or "本地解析失败", node_count = 0, last_update = os.time() })
+			M.save_meta(id, { error = perr or "本地解析失败", last_update = os.time() })
 			return nil, perr or "本地解析失败"
 		end
 		log("Parse local ok nodes="..#res.nodes)
@@ -267,23 +290,29 @@ function M.sync(id)
 	end
 	if not meta.url or meta.url == "" then log("Sync fail: no URL"); return nil, "无订阅 URL" end
 
-	-- 订阅代理：开启且代理地址有效时，通过代理下载订阅
+	-- 订阅代理：开启时代理地址必须有效。无效就明确失败——
+	-- 静默直连会让用户以为流量走了代理，属于必须避免的 silent fallback（§12）。
 	local proxy = ""
 	if meta.proxy_enable == true or meta.proxy_enable == "1" then
 		local p, perr = http.parse_proxy(meta.proxy or "")
-		if p and p ~= "" then
-			proxy = p
-		elseif perr then
-			log("Proxy ignored: " .. tostring(perr))
+		if not p or p == "" then
+			local msg = perr or "代理地址为空"
+			log("Proxy invalid: " .. tostring(msg))
+			M.save_meta(id, { error = "代理配置无效: " .. tostring(msg), last_update = os.time() })
+			return nil, "代理配置无效: " .. tostring(msg)
 		end
+		proxy = p
 	end
-	if proxy ~= "" then log("Using proxy " .. proxy) end
+	-- 日志不记录代理凭据（§39）
+	if proxy ~= "" then log("Using proxy " .. http.redact_proxy(proxy)) end
 
 	local content, headers, err = http.download(meta.url, { max_size = M.MAX_SIZE, timeout = M.TIMEOUT, proxy = proxy })
 	if not content then
-		log("Download fail: " .. tostring(err))
-		M.save_meta(id, { error = err, last_update = os.time() })
-		return nil, err
+		-- 下载工具的报错可能回显含凭据的 URL，写日志与入库前先抹掉（§39）
+		local safe_err = http.scrub_credentials(err or "下载失败")
+		log("Download fail: " .. safe_err)
+		M.save_meta(id, { error = safe_err, last_update = os.time() })
+		return nil, safe_err
 	end
 	log("Download ok size="..#content)
 
@@ -293,7 +322,7 @@ function M.sync(id)
 	local res, perr = parser.parse(content)
 	if not res or not res.nodes then
 		log("Parse fail: " .. tostring(perr))
-		M.save_meta(id, { error = perr or "解析失败", node_count = 0, last_update = os.time() })
+		M.save_meta(id, { error = perr or "解析失败", last_update = os.time() })
 		return nil, perr or "解析失败"
 	end
 	log("Parse ok nodes="..#res.nodes)
@@ -306,7 +335,12 @@ function M.sync(id)
 
 	local ok = M.save_meta(id, {
 		node_count = #nodes, format = res.format, error = "", last_update = os.time(),
-		upload = ui and ui.upload, download = ui and ui.download, total = ui and ui.total, expire = ui and ui.expire,
+		-- 机场不再下发 subscription-userinfo 时必须把旧数值清掉，
+		-- 否则列表页会一直显示早已过期的流量/到期时间。用 M.CLEAR 表达「清除」。
+		upload = (ui and ui.upload) or M.CLEAR,
+		download = (ui and ui.download) or M.CLEAR,
+		total = (ui and ui.total) or M.CLEAR,
+		expire = (ui and ui.expire) or M.CLEAR,
 	})
 	if not ok then return nil, "更新状态失败" end
 	-- 源订阅更新后，刷新引用它的组合订阅
@@ -346,13 +380,74 @@ local FORM_KEYS = {
 	reserved = true, ["persistent-keepalive"] = true, persistent_keepalive = true,
 	["listen-port"] = true, listen_port = true,
 	mtu = true, dns = true, ["amnezia-wg-option"] = true,
+	-- socks / http 的用户名。必须在表里：下面的 merge_form_node 先按 FORM_KEYS
+	-- 清空原节点再套用提交值，不在表里的字段会保留旧值——用户在表单里清空用户名
+	-- 也删不掉（collectNodes 会略过空值），等于改不动。
+	username = true,
 }
 
--- 合并表单节点到原节点：表单字段整体替换（可清空），非表单字段保留
+-- FORM_KEYS 里同一个语义的多种写法。表单只渲染其中的规范写法，别名必须跟随规范
+-- 写法一起清空：解析器产出的就是别名（parser_clash_yaml 写 skip_cert_verify、
+-- parser_json_config 与 parser.lua 写 obfs_param / protocol_param），残留的别名
+-- 仍会被输出模块读到，表现为「关不掉」——例如 build_tls 在 security 为 "none"
+-- 时还会退回 n.tls，output_formats.surge_line 同理，于是用户把 vmess 的 TLS
+-- 关掉之后 Surge 输出里依然是 tls=true。
+local FORM_ALIASES = {
+	["obfs_param"] = "obfs-param",
+	["protocol_param"] = "protocol-param",
+	["skip_cert_verify"] = "skip-cert-verify",
+	["obfs_password"] = "obfs-password",
+	["private_key"] = "private-key",
+	["public_key"] = "public-key",
+	["peer-public-key"] = "public-key",
+	["peer_public_key"] = "public-key",
+	["preshared_key"] = "pre-shared-key",
+	["allowed_ips"] = "allowed-ips",
+	["persistent_keepalive"] = "persistent-keepalive",
+	["listen_port"] = "listen-port",
+	["network"] = "net",
+	-- normalize 把 tls 归一到 security，两者是同一语义的两种写法
+	["tls"] = "security",
+	-- shadowsocks 用 method、vmess/ssr 用 cipher，parse_local 双向互为别名
+	["method"] = "cipher",
+	["cipher"] = "method",
+}
+
+-- 合并表单节点到原节点。
+--
+-- 只有「该协议的表单确实渲染过」的字段才允许被覆盖（含被清空）：表单按
+-- node.PROTO_FIELDS[proto] 渲染，未渲染的字段根本提交不上来，把它们一并清空
+-- 就等于用空值覆盖原值 —— vmess 的 security、hysteria2/tuic 的 security、
+-- WireGuard 的 dns 都是这样被静默抹掉的（详见 node.PROTO_FIELDS 的注释）。
+-- 别名（FORM_ALIASES）跟随其规范写法一起清空，避免残留值「关不掉」。
+--
+-- 协议未知（不在 PROTO_FIELDS 里）时退回「清空全部表单字段」的旧行为：
+-- 那时无从判断表单渲染了什么，清空虽然可能丢字段，但至少不会留下用户改不动的旧值。
 function M.merge_form_node(orig, formnode)
+	local node_mod = require("substore.node")
 	local out = {}
 	for k, v in pairs(orig or {}) do out[k] = v end
-	for k in pairs(FORM_KEYS) do out[k] = nil end
+	local fields = type(formnode) == "table" and node_mod.PROTO_FIELDS[formnode.proto] or nil
+	local old_fields = type(orig) == "table" and node_mod.PROTO_FIELDS[orig.proto] or nil
+	-- 原协议未知（或原节点没有 proto）时不做「只清渲染字段」的裁剪：那种情况下
+	-- 无从判断原节点里哪些字段是本协议的，退回到清空全部表单字段的旧行为。
+	if fields and (orig == nil or orig.proto == nil or old_fields) then
+		local rendered = {}
+		for _, k in ipairs(fields) do rendered[k] = true end
+		-- 协议被改过时，旧协议的字段也要清掉（vmess 改成 trojan 不该留着 uuid）。
+		-- 协议没变时 old_fields == fields，是同一个集合，无副作用。
+		for _, k in ipairs(old_fields or {}) do rendered[k] = true end
+		for _, k in ipairs(node_mod.FORM_ALWAYS_FIELDS) do rendered[k] = true end
+		for k in pairs(FORM_KEYS) do
+			-- 先看字段本身是否被渲染；只有「别名」才回退到它的规范写法。
+			-- 顺序不能反：method 与 cipher 互为别名，若一律先查别名表，
+			-- shadowsocks 渲染的 method 会被判成「cipher 没渲染」而不清空。
+			local canon = rendered[k] and k or (FORM_ALIASES[k] or k)
+			if rendered[canon] then out[k] = nil end
+		end
+	else
+		for k in pairs(FORM_KEYS) do out[k] = nil end
+	end
 	for k, v in pairs(formnode or {}) do
 		if k ~= "type" then out[k] = v end
 	end
@@ -424,7 +519,8 @@ function M.add_combo(name, sources, opts)
 		end
 	end
 	if #srcs == 0 then return nil, "请选择至少一个订阅" end
-	local seq, items = load()
+	local seq, items, lerr = load()
+	if lerr then return nil, lerr end
 	seq = seq + 1
 	local id = string.format("s%08x", seq)
 	items[id] = {

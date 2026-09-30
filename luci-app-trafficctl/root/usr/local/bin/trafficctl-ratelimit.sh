@@ -26,14 +26,8 @@ TARGET=$(tctl_validate_target "$IP") || {
 }
 IP="$TARGET"
 
-# A block limited "shared" would let one device starve the rest, so per-device
-# is the sane default whenever the target covers more than one address.
 if [ -z "$MODE" ]; then
-    case "$IP" in
-        */32) MODE="shared" ;;   # a /32 is one host; both modes are identical
-        */*)  MODE="each" ;;     # any wider block: per-device buckets
-        *)    MODE="shared" ;;   # bare host address
-    esac
+    MODE=$(tctl_ratelimit_default_mode "$IP")
 fi
 case "$MODE" in
     each|shared) ;;
@@ -59,7 +53,18 @@ else
     tctl_ratelimit_remove "$IP" "$COMMENT" 2>/dev/null
     TCTL_RL_DOWNLOAD_FAILED=0
     TCTL_RL_UPLOAD_FAILED=0
+    TCTL_RL_UPLOAD6_OK=0
     tctl_ratelimit_add "$IP" "$RATE" "$COMMENT" "$MODE"
+
+    # IPv6 coverage is partial by construction and the operator has to know
+    # which part: upload is policed on the MAC, download is not policed at all
+    # over v6 (see tctl_ratelimit_add). Claiming "both directions" without
+    # this note is how issue #67 stayed invisible.
+    if [ "$TCTL_RL_UPLOAD6_OK" = "1" ]; then
+        V6NOTE=" [IPv6: upload only]"
+    else
+        V6NOTE=" [IPv4 only]"
+    fi
 
     # A half-applied limit is a silent trap: report exactly which direction
     # is live rather than claiming success for both.
@@ -67,13 +72,16 @@ else
         echo "{\"ok\":false,\"msg\":\"failed to set rate limit for $IP (no usable WAN or LAN ingress device)\"}"
         exit 1
     fi
-    tctl_persist_enabled && tctl_persist_save "ratelimit" "$IP" "$RATE"
+    # The mode is persisted with the rate. Without it the restore hook fell back
+    # to tctl_ratelimit_add's own default ("shared"), so a subnet limited
+    # "5 Mbit each" came back after a reboot as 5 Mbit for the entire subnet.
+    tctl_persist_enabled && tctl_persist_save "ratelimit" "$IP" "$RATE" "$MODE"
     tctl_log "ratelimit_set" "$IP" "${RATE}kbit" "${TCTL_VIA:-cli}" "${TCTL_SRC:-local}"
     if [ "$TCTL_RL_DOWNLOAD_FAILED" = "1" ]; then
-        echo "{\"ok\":true,\"msg\":\"rate limit ${RATE} kbit/s applied to $IP UPLOAD ONLY — WAN device not resolvable\"}"
+        echo "{\"ok\":true,\"ipv6_upload\":$([ "$TCTL_RL_UPLOAD6_OK" = "1" ] && echo true || echo false),\"msg\":\"rate limit ${RATE} kbit/s applied to $IP UPLOAD ONLY — WAN device not resolvable$V6NOTE\"}"
     elif [ "$TCTL_RL_UPLOAD_FAILED" = "1" ]; then
-        echo "{\"ok\":true,\"msg\":\"rate limit ${RATE} kbit/s applied to $IP DOWNLOAD ONLY — no LAN ingress device\"}"
+        echo "{\"ok\":true,\"ipv6_upload\":false,\"msg\":\"rate limit ${RATE} kbit/s applied to $IP DOWNLOAD ONLY — no LAN ingress device [IPv4 only]\"}"
     else
-        echo "{\"ok\":true,\"msg\":\"rate limit ${RATE} kbit/s for $IP (both directions, $MODE)\"}"
+        echo "{\"ok\":true,\"ipv6_upload\":$([ "$TCTL_RL_UPLOAD6_OK" = "1" ] && echo true || echo false),\"msg\":\"rate limit ${RATE} kbit/s for $IP (both directions, $MODE)$V6NOTE\"}"
     fi
 fi

@@ -2,6 +2,272 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.6.0-r1] - 协议覆盖补全与导入/输出保真修复
+
+本轮起因：用户报告「添加本地订阅 → 表单导入」的「类型」下拉框协议不全，
+与 README 描述不符。审计后确认问题存在，且**「文本导入」存在更严重的同类缺口**，
+并顺带查出若干静默数据丢失 / 非法输出问题。所有修改均经代码或测试确认，
+未做任何推测性改动。
+
+### 协议覆盖（本次报告的主问题）
+
+- **表单导入缺 `hysteria`(v1) 与 `socks`**：`nodeform.js` 的下拉框只有 8 个协议，
+  而 `node.lua` 的 `M.PROTOS`、节点页协议筛选、规则 `proto_filter` 都认 10 个。
+  用户因此无法用表单录入这两类节点。
+- **文本导入（URI）缺 `hysteria`(v1) 与 `socks`/`socks5`**，且这是**导出→导入回环断裂**：
+  `output_uri.to_share_uri` 会生成 `hysteria://` 与 `socks5://` 链接，但 `parser.parse_uri`
+  对二者一律返回 `unsupported proto`。含这两类节点的订阅文本会被**整行静默丢弃**。
+  已新增 `parse_hysteria` / `parse_socks` 并补齐 `SUPPORTED` 分发表。
+- **简易 YAML 兜底解析的协议表漂移**：该处自维护一份映射，缺
+  `hysteria2` / `hysteria` / `tuic` / `wireguard`，且 `socks5` 未归一，更严重的是
+  对认不出的 `type` 用 `or "vmess"` 兜底 —— 一份 sing-box YAML 里的
+  hysteria2/tuic/wireguard 出站会变成数个**字段全错的假 vmess 节点**（静默数据损坏）。
+  现改为复用 `parser_clash_yaml.TYPE_MAP`（单一事实来源），未知协议直接丢弃。
+- **简易 YAML 兜底解析的 `outbounds:` 分支从不生效**：该分支同时接受 Clash 的
+  `proxies:` 与 sing-box 的 `outbounds:` 段名，却只读 Clash 的 `port` / `name`，
+  而 sing-box 用 `server_port` / `tag`。结果是 sing-box YAML 出站**全部被静默丢弃**
+  （识别了段名却解析出 0 个节点）。现按 `parser_json_config.parse_singbox_json`
+  读取的键名逐字补齐别名：`server_port` / `tag` / `auth_str` / `auth` /
+  `tls.server_name` / `tls.insecure` / `security`(vmess 加密方式) / `network`。
+
+### 归一化
+
+- **`socks5` → `socks` 归一**：两者是同一协议的不同写法（Clash 写 `socks5`、
+  sing-box 写 `socks`、分享链接写 `socks5://`）。输出模块本来就同时认两种写法，
+  但 `node.filter` 与 `rules.proto_filter` 是精确比较，两种写法互相看不见 ——
+  节点页按协议筛选与规则过滤都会漏。现统一为规范名 `socks`。
+
+### 输出保真
+
+- **clashmeta：hysteria(v1) 的 SNI 丢失**。此前统一输出 `servername`，而 mihomo 的
+  hysteria 系列没有该字段（写 `servername` 会被忽略），SNI 丢失会导致客户端
+  以 IP 校验证书、握手直接失败。现按协议区分：hysteria / hysteria2 输出 `sni`，
+  vmess / vless / trojan 仍输出 `servername`。同时补上 v1 的 `obfs`（普通字符串）。
+- **clashmeta：socks5 的 `password` 被输出两次**（通用字段段 + 协议专属段），
+  在 YAML 里形成重复键，属非法/歧义配置。现协议专属段只补 `username`。
+- **clashmeta / singbox / surge：`http` 的用户名丢失**，只输出密码。现按上游文档
+  补齐 `username`（mihomo 的 http / socks5 用 `username` + `password`；
+  Surge 家族用 `username=` / `password=` 具名参数）。
+- **singbox：hysteria(v1) 字段名错误**。此前输出 `password` 与
+  `obfs = { type, password }`，但 sing-box 的 hysteria 出站认证字段是 `auth_str`，
+  `obfs` 是**普通字符串**（对象形式是 hysteria2 的 salamander 专属）。
+  该修正与本项目 `parser_json_config` 自身的回读逻辑一致
+  （其按 `outbound.password or outbound.auth_str or outbound.auth` 读取）。
+- **`output_uri` / `output_clash_meta`：hysteria(v1) 不应出现 `obfs-password`**。
+  该字段是 hysteria2 的 salamander 专属，写到 v1 上是非法参数/非法键。
+
+### 表单
+
+- **`core.FORM_KEYS` 缺 `username`**：`merge_form_node` 先按 `FORM_KEYS` 清空原节点
+  再套用提交值，不在表里的字段会保留旧值 —— 用户在表单里**清空用户名也删不掉**
+  （`collectNodes` 会略过空值）。已补入。
+
+### 已知限制（本轮不修，均有明确原因）
+
+- **混合格式文本导入不支持**。README 称可粘贴「YAML / URI / JSON / wg-quick `.conf` 混合」
+  文本，但 `parse_local → parse → detect` 只识别**一种**格式，其余部分被静默丢弃
+  （已实测：「URI + WG conf」只剩 WG 节点；「URI + JSON」只剩 URI 节点）。
+  这是**功能缺失**而非小缺陷，需要重新设计 parser 的分段架构（规格 §22 明确警告
+  不要直接采用未经验证的逐行算法），故留待专门版本处理。
+- **sing-box 的 hysteria(v1) 出站还要求 `up` / `down`（带宽）**，本项目的节点模型
+  不承载该字段。凭空填默认值属于猜测，故不输出；用户需在自己的配置里补上。
+- **hysteria(v1) 的上游 URI 规范未能核实**（上游文档站点持续 404，无法取得权威定义）。
+  因此 `parse_hysteria` 只保证解析本项目 `output_uri` 自身生成的链接形态
+  （回环已验证），认不出的查询参数一律忽略而不报错，不臆造参数语义。
+- **`http` 不加入任何 UI 协议列表**：规格 §25 的权威协议表恰好是 10 个协议、不含 `http`。
+  它可由 Clash YAML / JSON 配置导入并正常导出（凭据已修），但不作为表单可选项。
+- **`parser_yaml.lua` 为死代码**（`parser.lua` 顶部 require 后从未调用），
+  其中留有同样未归一的 `socks5` 映射，仅记录，不影响运行。
+- **`parse_tuic` / `parse_hysteria2` 按第一个 `@` 切分 userinfo**，与 `parse_socks`
+  修复前同类（密码含裸 `@` 会被切坏）。本轮只修了 socks，其余留作观察项。
+
+### 测试
+
+- 新增 `tests/protocol_coverage_test.lua`（110 项断言），覆盖上述全部修复：
+  hysteria / socks 的 URI 导入与导出→导入回环、混合文本不再丢行、
+  兜底解析不再造假日 vmess、sing-box YAML 出站别名、`socks5` 归一后筛选/规则命中、
+  clashmeta / singbox / surge 的输出字段、`FORM_KEYS` 的 `username`。
+- 全量测试：`tests/*_test.lua` 逐文件运行，**0 个失败文件**；
+  `tests/cron_result_test.sh` rc=0。
+
+### 版本
+
+- 版本号 2.5.1-r1 → 2.6.0-r1（协议覆盖为功能增强，走 minor）；
+  `README.md` / `README.en.md` / `docs/INSTALL.md` 同步。
+
+## [2.5.1-r1] - 安全加固与数据保真修复
+
+本轮为缺陷修复版本，重点是**命令注入 / SSRF 绕过 / 静默数据丢失**三类问题。
+所有修改均经代码或测试确认，未做任何推测性改动。
+
+### 安全
+
+- **修复命令注入（可被远程触发）**：此前拼 shell 命令行时使用 `string.format("%q")`
+  做转义。`%q` 生成的是**双引号**字符串，而 `/bin/sh` 在双引号内**仍然执行**
+  `$(...)` 与 `` `...` `` 命令替换——已实测确认 `format("%q", "$(touch /tmp/x)")`
+  会真的创建文件。新增 `util.shq()` 改用单引号转义（`'` → `'\''`），并应用于所有
+  拼接外部数据的位置：
+  - `http.lua`：curl / wget 命令行、临时文件路径、`-x` 代理参数、错误输出文件
+  - `http.lua`：`http_proxy` / `https_proxy` 环境变量赋值
+  - `core.lua`：`logger -t luci-app-substore <msg>`（msg 含下载失败原因等外部内容）
+  - `probe.lua`：探测命令
+  - `util.lua`：`ensure_dir` 的 `mkdir -p`
+- **修复 SSRF 检查绕过（fail-open）**：`http.parse_url` 只按 `/` 截断主机部分，
+  于是 `http://127.0.0.1?a=1` 的「主机」是 `127.0.0.1?a=1`——既非合法主机名也非
+  数值型 IPv4，DNS 解析必然失败，而**解析失败是放行的**，`curl` 实际连的是回环地址
+  （路由器上正是 LuCI 的 `:80`）。现按 RFC 3986 截断到第一个 `/` `?` `#`，
+  并额外剥离 userinfo（`http://evil@127.0.0.1/` 同理可绕过）。
+- **修复 curl 后端接受 3xx**：`code:match("^[23]%d%d$")` 会把 3xx 当成成功。
+  重定向应由 `-L` 跟随并由 `validate_redirect_chain` 逐跳校验，而不是靠 3xx 直接放行；
+  现只接受 `2xx`。
+- **修复 wget 后端不检查退出码**：`os.execute` 的返回值此前被忽略，
+  下载失败但残留部分内容时会当成成功解析。现要求退出码为 0。
+
+### 数据保真（静默丢字段）
+
+- **修复从 LuCI 表单编辑 WireGuard 节点会丢掉全部 AmneziaWG 参数**：
+  `amnezia-wg-option` 在表单里是 JSON 文本框，提交上来是**字符串**，
+  而 `output_wireguard_conf` / `output_clash_meta` / `output_uri` 三处都要求它是
+  `table`——字符串被静默忽略。现于表单模式统一解码；JSON 非法时**明确报错**
+  而不是留个字符串让它在导出时无声消失。
+- **修复表单里的数组字段被写成标量**：`allowed-ips` / `reserved` / `dns` 在统一模型中
+  是数组（见 `.conf` 解析），但表单输入框只能给字符串，导出到 mihomo / sing-box
+  时字段类型非法（这两个客户端的对应字段是列表）。现于表单模式拆分为数组；
+  单值 `dns` 仍保持字符串，与 `.conf` 解析保持一致。
+- **修复 AmneziaWG 3.0 / 3.1 字段在 `.conf` 导入时被丢弃**：`.conf` 键名白名单只到
+  1.5 版，`HeaderProtectionKey` / `ContentPaddingAddition` / `RekeyAfterTime` /
+  `RekeyTimeout` / `RejectAfterTime` / `KeepaliveTimeout` / `MaxHandshakeAttempts` /
+  `RandomTrailers` / `DisableCookies` 九个字段在导入时被丢掉，而同样的配置走
+  Clash / JSON / URI 路径却能通过——同一份配置换个格式就丢参数。键名核对自
+  amneziawg-tools `src/config.c`；布尔字段按 `parse_bool` 的规则只认 `on` / `off` / 数字。
+- **修复多个 `[Peer]` 的 `.conf` 只产出部分节点**：现每个 `[Peer]` 各生成一个节点
+  并共享 `[Interface]` 设置；AmneziaWG 参数表**按节点复制**，避免多个节点共享
+  同一个 table 而互相影响。
+- **修复节点改名规则中的 Lua 模式陷阱**（`node.lua`）：
+  - `-` 在 Lua 模式里是**惰性量词**，于是 `Node-(\d+)` 被解释成 `Nod` + `e-` + 数字，
+    **永远匹配不上且不报错**。现于字符类外转义为 `%-`
+  - `|` 在 Lua 模式里没有「或」语义，整个规则静默不匹配。现按**顶层** `|` 拆成多个
+    候选依次替换；括号内与字符类 `[...]` 内的 `|` 不拆（拆开会得到残缺模式，比不拆更糟）
+  - `\b` / `\B` 原被映射成 `%b`——那是 Lua 的「成对匹配」模式，语义完全不同。
+    现按无操作处理（Lua 模式无词边界）
+  - 模板改名的替换值现在转义 `%`，否则 `[50% OFF]` 这类名字会产生 NUL 字节
+- **修复 Clash YAML 的 `type` 字段泄漏进节点**：`type` 是协议判别字段（已被映射为
+  `proto`），原样拷进来会让 `output_uri` 把它当成 vmess 的 header type 写出
+  （`"type":"vmess"`），生成客户端无法识别的 `vmess://` 链接。
+- **修复订阅流量信息无法清空**：`save_meta` 用 `pairs` 遍历补丁，而 `pairs` 永远
+  不会给出 `nil` 值，调用方无法表达「把这个字段删掉」，导致过期的流量/到期时间
+  一直显示。新增 `core.CLEAR` 哨兵表达清除。
+
+### 界面
+
+- **修复节点保存失败无反馈**：`action_node_save` 此前只在成功分支做事，
+  其余情况一律静默重定向——用户提交了坏数据却看到「已保存」的样子（违反 §18）。
+  现所有失败路径（下标无效 / 内容为空 / 解析失败 / 写入失败）都经 `?err=` 回传，
+  并在节点页渲染为可见的错误提示。
+- **修复存储型 XSS**：节点页的分组下拉与组合订阅页的名称用 `<%= %>` 原样输出
+  （未转义），恶意订阅里的分组名/名称可注入脚本。现统一走 `luci.util.pcdata()`。
+
+### Cron
+
+- **退出码现在反映本轮结果**：`substore-cron.sh` 此前无论成败一律 `exit 0`，
+  cron 的 `MAILTO` / 外部监控无法据此判断。现只要有订阅更新失败即返回非 0；
+  找不到 lua 解释器（整条链路不可用）同样返回非 0，而不是静默成功。
+
+### 解析器补齐
+
+- `vless://` 补 `path` / `host` / `flow`；`vmess://`（新格式）补
+  `host` / `path` / `headerType` / `fp` / `alpn`；`trojan://` 补
+  `type`→`net` / `path` / `host` / `fp`；`hysteria2://` 补 `security` 与
+  `skip-cert-verify`；经典 vmess JSON 的 `aid` 正确映射为 `alterId`
+- `b64u_decode` 增加 round-trip 校验：合法 base64url 解码后重新编码必然一致，
+  明文则不一致——以此区分「这是 base64」和「这就是明文」，避免把明文
+  误当 base64 解出乱码
+- `M.detect` 调整判定顺序：Surge 配置在 URI 兜底分支之前判定，避免被误判成 URI
+
+### 测试
+
+- 新增 `tests/security_fixes_test.lua`（37 项）：`shq` 用真实 `sh -c` 验证命令替换
+  不发生；`parse_url` 的 query / fragment / userinfo 剥离；`save_meta` 的 `CLEAR`
+  语义；改名的 `-` / `|` / `%` 行为
+- `tests/cron_result_test.sh` 增加退出码断言（含缺解释器、无订阅文件两种边界），
+  并验证该测试确实能捕获修复前的行为（对旧脚本跑会失败 3 项）
+- `tests/controller_local_test.lua` 增加 `action_node_save` 的 6 条失败路径断言，
+  同样验证对旧控制器会失败 6 项
+- `tests/wireguard_conf_test.lua` 增加表单路径断言（AWG JSON 解码、数组归一、
+  非法 JSON 报错、单值 DNS 保持字符串），并覆盖 AWG 3.0 / 3.1 字段导入与多 `[Peer]`
+- 全量：33 个 `tests/*_test.lua` 共 **1286** 项断言全部通过；shell 测试 11 项通过
+
+### 已知限制（未在本轮修复）
+
+- LuCI 里 `amnezia-wg-option` 仍是**单个 JSON 文本框**，没有逐字段的表单控件。
+  数据已能正确往返（见上），但录入体验不佳。逐字段化属于新功能，按版本约定
+  应进入 minor 版本，故不在 2.5.1 中改动。
+- wget 后端的下载体积上限仍是**下载后**判断（busybox wget 没有「下载前限流」的选项）。
+- 括号内的「或」`(a|b)` 在改名规则中不支持（Lua 模式无此语义，按字面处理）。
+
+### 版本
+
+- 版本号 2.5.0-r1 → 2.5.1-r1；README.md / README.en.md / docs/INSTALL.md 同步
+
+## [2.5.0-r1] - 订阅可靠性、错误反馈与 WireGuard 去重修复
+
+- **修复严重缺陷（订阅更新可能「看起来成功其实失败」）**：`core.sync` 失败时是
+  「返回 `nil, err`」而**不是**抛异常，而调用方只判断了 `pcall` 的第一层返回值。
+  `pcall` 返回 `true` 只说明没有抛错，第二个返回值才是 `sync` 自身的结果——
+  于是「同步返回 `nil, err`」被统计成**成功**。
+  - `root/usr/bin/substore-cron.sh`：改为 `local ok, res, err = pcall(core.sync, id)`，
+    并要求 `ok and res` 才算成功；失败时打印真实原因。同时把脚本输出同时写 stdout 与
+    syslog（原先只进 syslog，cron 邮件里看不到）
+  - `root/usr/lib/lua/luci/controller/admin/substore.lua`：`action_update` 同样处理两层结果
+- **修复严重缺陷（代理静默失效，属 silent fallback）**：
+  - `core.sync` 原先在「代理已启用但代理地址无效」时只记一条日志就**直连下载**，
+    用户会以为流量走了代理、实际暴露真实 IP。现改为**明确失败**并把原因写入订阅状态
+  - wget 后端原先在遇到它不支持的代理协议（`socks*`）时**丢掉代理继续直连**。
+    现改为明确报错并提示安装 curl 或改用 http 代理（busybox wget 只能通过
+    `http_proxy` / `https_proxy` 环境变量使用 http(s) 代理）
+- **修复严重缺陷（wget 后端重定向绕过 SSRF 预检）**：curl 路径逐跳校验重定向目标，
+  wget 路径**完全不校验**，可被重定向到 `127.0.0.1` / 内网而绕过 `check_public`。
+  现 wget 改用 `-S` 输出响应头日志，由新增的 `http.validate_redirect_chain`
+  按出现顺序解析整条重定向链并逐跳复检，任一跳不安全即整体失败并**丢弃响应体**。
+  另修复协议相对地址（`//host/path`）被误当成同主机路径而漏检的问题
+- **修复严重缺陷（界面失败无反馈）**：订阅的新建 / 保存 / 本地订阅新建 / 保存
+  失败时，控制器只静默跳回列表页，用户看到的是「什么都没发生」，与成功无法区分。
+  现失败原因经 `?err=` 回传到列表页并渲染为可见的错误提示
+- **修复严重缺陷（WireGuard 节点被错误去重合并）**：去重键为 `proto+server+port`，
+  而同一 endpoint 上的**不同 peer 公钥是不同节点**，会被错误合并而丢节点。
+  现 WireGuard / `wg` 节点的去重键并入 peer 公钥（兼容 `public-key` / `public_key` /
+  `peer-public-key` / `peer_public_key` 四种写法）；其余协议去重行为**完全不变**
+- **修复严重缺陷（多个 WireGuard 节点被拼进一个 `.conf`）**：一个 `.conf` 文件只能包含
+  一个 `[Interface]`，拼接会产生客户端无法导入（或只取首段）的畸形配置。
+  现多于一个 WireGuard 节点时**明确报错**（错误信息含节点数与「一条隧道」提示），
+  而不是静默拼接
+- **修复 AmneziaWG `.conf` 导出键名靠猜测**：原先用「首字母大写」由内部键名推导 `.conf`
+  键名，多词键会被写错（`header-protection-key` → `Header-protection-key`，
+  正确为 `HeaderProtectionKey`），未知键可能让客户端拒绝整份配置。
+  现改为显式映射表，只输出能**确定**键名的键（`Jc/Jmin/Jmax/S1–S4/H1–H4/I1–I5/J1–J3/Itime`），
+  映射不到的键一律不输出；已支持键集合零变化
+- **修复模板注入（HTML / JS）**：7 个模板把用户可控数据（订阅名、URL、代理、节点字段、
+  解析错误信息）直接以 `<%= %>` 原样输出。现按上下文分别转义：
+  HTML 用 `luci.util.pcdata`，注入 JS 的字符串用 `json_encode`（并转义 `</` 防止提前
+  闭合 `script`），URL 用 `urlencode`
+- **修复日志/错误信息泄漏凭据**：新增 `http.redact_proxy`（代理地址去凭据）与
+  `http.scrub_credentials`（抹掉 URL 中的 `//user:pass@`），用于日志与订阅错误信息
+- **修复失败路径污染 `node_count`**：同步失败时不再把 `node_count` 清零——
+  磁盘上的旧节点仍在、订阅链接仍在下发，清零会让界面显示与实际不符
+- 新增测试：`tests/controller_local_test.lua`（22 项）、`tests/template_escape_test.lua`（21 项）、
+  `tests/cron_result_test.sh`（5 项）；`tests/wireguard_conf_test.lua` 扩至 93 项、
+  `tests/node_extended_test.lua` 扩至 28 项、`tests/http_proxy_test.lua` 扩充代理矩阵与
+  重定向链复检。全部测试共 1174 项断言通过
+- 版本号 2.4.0-r2 → 2.5.0-r1；README.md / README.en.md / docs/INSTALL.md 同步
+- 已知限制（本次**未**修改，另行处理）：`check_public` 在无 DNS 解析能力时放行
+  （fail-open）且解析与下载之间存在 TOCTOU 窗口；wget 路径的重定向校验是事后的
+  （busybox wget 无 `--max-redirect`），响应体虽被丢弃但请求已经发出，且无法限制下载体积；
+  AmneziaWG 3.0 / 3.1 新增的 9 个字段（`HeaderProtectionKey`、`ContentPaddingAddition`、
+  `RekeyAfterTime`、`RekeyTimeout`、`RejectAfterTime`、`KeepaliveTimeout`、
+  `MaxHandshakeAttempts`、`RandomTrailers`、`DisableCookies`）**不被 `.conf` 解析器接受**
+  （白名单外，导入即丢弃），但会从 Clash / JSON / `wireguard://` 导入路径原样透传；
+  sing-box 本身不支持 AmneziaWG，其输出会丢弃 AWG 参数
+
 ## [2.4.0-r2] - 修复 vmess 加密方式与 TLS 层混淆
 
 - **修复严重缺陷**：经典 vmess 分享链接 `vmess://base64(json)` 的 `scy` 是**加密方式**

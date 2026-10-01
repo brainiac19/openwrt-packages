@@ -7,7 +7,7 @@ local parser = require("substore.parser")
 
 local M = {}
 
-M.version = "2.6.0"
+M.version = "2.6.9"
 M.DATA_DIR = "/etc/substore"
 M.LIST_FILE = M.DATA_DIR .. "/subscriptions.json"
 M.NODES_DIR = M.DATA_DIR .. "/nodes"
@@ -16,13 +16,32 @@ M.CRON_FILE = "/etc/cron.d/substore"
 M.MAX_SIZE = 10 * 1024 * 1024 -- 10MB
 M.TIMEOUT = 20
 
+-- 「协议筛选」的可选协议，用的是节点模型里的**规范**协议名（node.normalize 的产物）。
+-- 控制器（read_rules_fields）与三个表单模板共用这一份：两边各写一份的话，
+-- 一旦漂移，勾选框就会生成一个永远匹配不到任何节点的 proto_filter，
+-- 而症状是「勾了没用」—— 不会报错，最难查。
+-- 不含 socks5：解析阶段已把它归一成 socks（见 parser.lua 的说明）。
+M.RULE_PROTOS = { "vmess", "vless", "trojan", "shadowsocks", "ssr",
+	"hysteria2", "tuic", "hysteria", "wireguard", "socks" }
+
 local function id_is_valid(id)
 	return type(id) == "string" and id ~= "" and id:match("^[A-Za-z0-9_%-]+$") ~= nil
 end
 
+-- 目录权限只收紧一次（每进程）。load() 每次读列表都会调用 ensure_dirs()，
+-- 无条件 chmod 会让每次读取都多 fork 两个子进程。
+local dirs_secured = false
 function M.ensure_dirs()
-	util.ensure_dir(M.DATA_DIR)
-	util.ensure_dir(M.NODES_DIR)
+	util.ensure_dir(M.DATA_DIR, "700")
+	util.ensure_dir(M.NODES_DIR, "700")
+	if not dirs_secured then
+		dirs_secured = true
+		-- mkdir -m 只对**本次新建**的目录生效；从旧版本升级上来的机器上目录已存在，
+		-- 权限仍是当初按 umask 建的（通常 0755），所以这里显式再 chmod 一次。
+		-- 目录里是订阅 URL、公开下载 token 与节点凭据，0700 只留 root。
+		util.chmod(M.DATA_DIR, "700")
+		util.chmod(M.NODES_DIR, "700")
+	end
 end
 
 -- 读取订阅列表，返回 seq, items, err。
@@ -42,15 +61,36 @@ local function load()
 	end
 	local seq = tonumber(data._seq) or 0
 	local items = type(data.items) == "table" and data.items or {}
+	-- items 的每个值都必须是订阅元数据表。出现别的类型说明文件不是本程序写的
+	-- （被手工编辑过 / 被截断后又被补全 / 磁盘错误）。此时不能原样返回：
+	--   * M.list / M.get 里的 pairs(meta) 会抛
+	--     "bad argument #1 to 'pairs' (table expected, got string)" ——
+	--     订阅列表页直接 500；cron 路径更糟，core.list() 抛异常会让整轮同步
+	--     在打印 "N ok, M failed" 之前中断，substore-cron.sh 据此判为成功。
+	--   * 静默丢弃坏条目再返回也不行：调用方会以为列表完好，下一次 save 就把
+	--     它们永久抹掉（与 H8 的整体损坏同一个陷阱）。
+	-- 因此：返回能用的条目，同时带上损坏错误，让写路径（add / save_meta /
+	-- write_nodes …）拒绝落盘，与上面的整体损坏走同一条路。
+	local bad = false
+	local clean = {}
+	for id, meta in pairs(items) do
+		if type(meta) == "table" then clean[id] = meta else bad = true end
+	end
+	if bad then
+		return seq, clean, "订阅列表文件已损坏，存在非法条目：" .. M.LIST_FILE
+	end
 	return seq, items
 end
 
 local function save(seq, items)
 	M.ensure_dirs()
-	return util.atomic_write(M.LIST_FILE, util.json_encode({ _seq = seq, items = items }))
+	-- 0600：列表里有订阅 URL 与公开下载 token
+	return util.atomic_write(M.LIST_FILE, util.json_encode({ _seq = seq, items = items }), "600")
 end
 
--- 返回 arr, err。err 非空表示列表文件已损坏（此时 arr 为空）。
+-- 返回 arr, err。err 非空表示列表文件已损坏。
+-- 整体无法解析时 arr 为空；只有部分条目非法时 arr 仍包含能用的条目
+-- （坏条目已被 load 过滤掉，否则下面的 pairs(meta) 会抛异常）。
 -- 追加第二个返回值是向后兼容的：调用方普遍写成 ipairs(core.list()) 或
 -- local items = core.list()，都只取第一个值。
 function M.list()
@@ -220,7 +260,8 @@ end
 
 function M.write_nodes(id, nodes)
 	M.ensure_dirs()
-	return util.atomic_write(M.nodes_file(id), util.json_encode(nodes))
+	-- 0600：节点文件里有 uuid / 密码 / 私钥等全部凭据
+	return util.atomic_write(M.nodes_file(id), util.json_encode(nodes), "600")
 end
 
 function M.read_nodes(id)

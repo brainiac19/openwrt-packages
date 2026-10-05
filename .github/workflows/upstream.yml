@@ -478,6 +478,10 @@ jobs:
             mv -f $pkg/Makefile $pkg/Makefile.k >/dev/null 2>&1 || true
           done
           rm -rf */.github
+          mkdir -p luci-mod-status/root/usr/lib/lua/luci luci-mod-status/htdocs/luci-static/resources/netstat
+          cp -rf luci-app-netstat/files/usr/lib/lua/luci/controller luci-mod-status/root/usr/lib/lua/luci/
+          cp -rf luci-app-netstat/files/www/luci-static/resources/view luci-mod-status/htdocs/luci-static/resources/
+          cp -rf luci-app-netstat/files/www/luci-static/resources/netstat/{netstat.css,netstat_dark.css} luci-mod-status/htdocs/luci-static/resources/netstat/
       - name: SSH connection to Actions
         uses: kiddin9/debugger-action@master
         if: github.event.inputs.ssh == 'true'
@@ -540,6 +544,7 @@ jobs:
           touch /tmp/ok2
           ) &
 
+          wait
           sed -i \
             -e 's?include \.\./\.\./\(lang\|devel\)?include $(TOPDIR)/feeds/packages/\1?' \
             -e "s/\(\(^\| \|	\)\(PKG_HASH\|PKG_MD5SUM\|PKG_MIRROR_HASH\|HASH\):=\).*/\1skip/" \
@@ -548,8 +553,6 @@ jobs:
             */Makefile
           sed -i 's/+docker\( \|$\)/+docker +dockerd /' luci-app-!(docker*)/Makefile
           sed -i "s/192.168.0.1/10.0.0.1/g" luci-app-onekeyap/{htdocs/luci-static/resources/view/network/onekeyap.js,root/usr/libexec/onekeyap,root/etc/config/onekeyap}
-          sed -i "s/2026.6.1/3026.6.1/g" luci-app-passwall/luasrc/model/cbi/passwall/client/type/ray.lua
-          sed -i "s/2026.6.1/3026.6.1/g" luci-app-passwall2/luasrc/model/cbi/passwall2/client/type/ray.lua
           chmod +x github/diy/*.sh
           bash .github/diy/create_acl_for_luci.sh -a >/dev/null 2>&1 || true
           bash .github/diy/convert_translation.sh -a >/dev/null 2>&1 || true
@@ -580,6 +583,12 @@ jobs:
           .main .main-right{background-color: transparent}\
           input[placeholder]::placeholder {color: #888888;opacity: 1}' \
             luci-theme-argon/htdocs/luci-static/argon/css/dark.css
+          sed -i \
+            -e 's/data-page=admin-dashboard/data-page=admin-status-dashboard/g' \
+            -e '$a\
+          .main .main-right{background-color: transparent}\
+          input[placeholder]::placeholder {color: #888888;opacity: 1}' \
+            luci-theme-noobwrt/htdocs/luci-static/noobwrt/css/dark.css
           sed -i 's,https://raw.githubusercontent.com,https://v4.gh-proxy.org/https://raw.githubusercontent.com,g' \
           luci-app-homeproxy/root/etc/homeproxy/scripts/generate_client.uc
           sed -i 's,https://raw.githubusercontent.com,https://v4.gh-proxy.org/https://raw.githubusercontent.com,g' \

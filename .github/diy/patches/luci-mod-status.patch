@@ -1,3 +1,15 @@
+--- a/luci-mod-status/ucode/template/admin_status/index.ut
++++ b/luci-mod-status/ucode/template/admin_status/index.ut
+@@ -6,8 +6,6 @@
+ 
+ {% include('header') %}
+ 
+-<h2 name="content">{{ _('Status') }}</h2>
+-
+ <div id="view">
+ 	<div class="spinning">{{ _('Loading view…') }}</div>
+ </div>
+
 --- a/luci-mod-status/htdocs/luci-static/resources/view/status/index.js
 +++ b/luci-mod-status/htdocs/luci-static/resources/view/status/index.js
 @@ -2,6 +2,7 @@
@@ -93,7 +105,7 @@
  			_('Kernel Version'),   boardinfo.kernel,
  			_('Local Time'),       datestr,
  			_('Uptime'),           systeminfo.uptime ? '%t'.format(systeminfo.uptime) : null,
-@@ -101,10 +95,18 @@ return baseclass.extend({
+@@ -101,10 +95,19 @@ return baseclass.extend({
  				systeminfo.load[0] / 65535.0,
  				systeminfo.load[1] / 65535.0,
  				systeminfo.load[2] / 65535.0
@@ -106,6 +118,7 @@
 +			fields.splice(6, 0, _('Temperature'));
 +			fields.splice(7, 0, cpuusage.tempinfo);
 +		}
++
 +		if (boardinfo.model != "Default string Default string") {
 +			fields.splice(2, 0, _('Model'));
 +			fields.splice(3, 0, boardinfo.model);
@@ -114,6 +127,26 @@
  		var table = E('table', { 'class': 'table' });
  
  		for (var i = 0; i < fields.length; i += 2) {
+@@ -114,6 +117,19 @@ return baseclass.extend({
+ 			]));
+ 		}
+ 
++		if (uci.get('system', '@system[0]', 'links') !== '0') {
++			table.appendChild(E('tr', { 'class': 'tr' }, [
++				E('td', { 'class': 'td', 'colspan': 2, 'style': 'padding: 10px 12px;' }, [
++					E('div', { 'style': 'display: flex; justify-content: space-around; align-items: center; text-align: center;' }, [
++						E('a', { 'href': '[https://openwrt.ai/](https://openwrt.ai/)', 'target': '_blank' }, [ '固件下载与定制' ]),
++						E('a', { 'href': '[https://openwrt.ai/fadian/](https://openwrt.ai/fadian/)', 'target': '_blank', 'style': 'color: orangered;' }, [ '赞助' ]),
++						E('a', { 'href': '[https://github.com/kiddin9/Kwrt](https://github.com/kiddin9/Kwrt)', 'target': '_blank' }, [ '源码与反馈' ]),
++						E('a', { 'href': '[https://t.me/opkwrt](https://t.me/opkwrt)', 'target': '_blank' }, [ 'TG交流' ])
++					])
++				])
++			]));
++		}
++
+ 		return table;
+ 	}
+ });
 
 --- a/luci-mod-status/htdocs/luci-static/resources/view/status/nftables.js
 +++ b/luci-mod-status/htdocs/luci-static/resources/view/status/nftables.js
@@ -125,6 +158,31 @@
  				E('button', {
  					'class': 'btn cbi-button',
  					'click': function() { location.href = 'nftables/iptables' }
+
+--- a/luci-mod-status/htdocs/luci-static/resources/view/status/include/08_stats.js
++++ b/luci-mod-status/htdocs/luci-static/resources/view/status/include/08_stats.js
+@@ -474,7 +474,7 @@ function maybeRefreshIp() {
+ 
+ // ─── Main baseclass ───────────────────────────────────────────────────────────
+ return baseclass.extend({
+-	title: _(''),
++	title: _('Status'),
+ 
+ 	load() {
+ 		// Use ?fast=1 to skip slow public-IP APIs — response is near-instant
+
+--- a/luci-mod-status/root/usr/lib/lua/luci/controller/netstat.lua
++++ b/luci-mod-status/root/usr/lib/lua/luci/controller/netstat.lua
+@@ -3,9 +3,6 @@ local nixio = require("nixio")
+ local uci   = require("luci.model.uci").cursor()
+ 
+ function index()
+-    entry({"admin", "tools"}, firstchild(), _("Tools"), 50).dependent = false
+-    entry({"admin", "tools", "netstat"}, cbi("netstat/config"), _("Netstat"), 20).leaf = true
+-    entry({"admin", "tools", "netstat_config"}, alias("admin", "tools", "netstat")).dependent = true
+     entry({"admin", "tools", "get_netdev_stats"}, call("getNetdevStats"), nil).sysauth = false
+ end
+ 
 diff --git a/luci-mod-status/htdocs/luci-static/resources/view/status/include/15_ports.js b/luci-mod-status/htdocs/luci-static/resources/view/status/include/26_ports.js
 similarity index 100%
 rename from luci-mod-status/htdocs/luci-static/resources/view/status/include/15_ports.js

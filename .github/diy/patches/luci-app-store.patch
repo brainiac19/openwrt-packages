@@ -1,3 +1,19 @@
+--- a/luci-app-store/root/etc/uci-defaults/luci-app-store
++++ b/luci-app-store/root/etc/uci-defaults/luci-app-store
+@@ -2,6 +2,12 @@
+ 
+ /etc/init.d/istore boot
+ 
++TARGET="/www/luci-static/istore/index.js"
++
++if [ -f "$TARGET" ]; then
++    sed -i 's/class:"tabs"/class:"cbi-tabmenu"/g' "$TARGET"
++fi
++
+ if [ -z "`uci -q get istore.istore.hide_docker`" ] && ! which docker >/dev/null; then
+     uci -q batch <<-EOF >/dev/null
+         set istore.istore.hide_docker=1
+
 --- a/luci-app-store/luasrc/controller/store.lua
 +++ b/luci-app-store/luasrc/controller/store.lua
 @@ -14,7 +14,8 @@ function index()

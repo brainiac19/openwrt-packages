@@ -5,6 +5,7 @@
  */
 
 import { access, lstat, mkdtemp, open, rmdir, unlink } from 'fs';
+import { cursor } from 'uci';
 import { urldecode_params } from 'luci.http';
 
 /* Global variables start */
@@ -594,9 +595,13 @@ export function wGETVerbose(url, ua) {
 	 * base64 inflation. Anything larger is almost certainly an attack or a
 	 * misconfiguration.
 	 *
-	 * The pipeline does cost the exit status: `system()` returns head's, which
-	 * is always 0. A fetch failure therefore arrives as an empty body plus the
-	 * fetcher's own message on stderr, and that is reported below. */
+	 * The pipeline costs the exit status - `system()` returns head's, which is
+	 * always 0 - so the fetcher's own status is carried out of it through a
+	 * file (see the command below).  Without that, a *truncated* transfer was
+	 * indistinguishable from a complete one: uclient-fetch exits 4 with
+	 * "Connection reset prematurely", and measured on the device a response
+	 * that declared 244 bytes and delivered 80 was handed to the parser as a
+	 * valid subscription body. */
 	/* The braces matter: executeCommand() appends `>out 2>err` to the command,
 	 * and in `a | b >out 2>err` those redirections bind to b only - the
 	 * fetcher's stderr would go to the caller's terminal and the failure
@@ -607,7 +612,16 @@ export function wGETVerbose(url, ua) {
 	 * being waved through on the grounds that it only ever returns a literal:
 	 * guard 25 exists to make "is this shell-safe" a mechanical check instead
 	 * of a judgement call, and a quoted constant costs nothing. */
-	const output = executeCommand(`{ ${shellQuote(fetchBinary())} -O - --user-agent=${shellQuote(ua)} --timeout=10 ${shellQuote(url)} | head -c ${HP_FETCH_CAP + 1}; }`) || {};
+	const dir = mkdtemp();
+	const rcpath = dir + '/rc';
+	const output = executeCommand(`{ { ${shellQuote(fetchBinary())} -O - --user-agent=${shellQuote(ua)} --timeout=10 ${shellQuote(url)}; echo $? >${shellQuote(rcpath)}; } | head -c ${HP_FETCH_CAP + 1}; }`) || {};
+
+	/* The fetcher's status, recovered from the file the pipeline wrote it to.
+	 * `head -c` closing the pipe makes the fetcher exit on SIGPIPE (141), which
+	 * is why the size check below runs first: a too-large body is reported as
+	 * too large, not as a signal. */
+	const fetch_rc = int(trim(read_capped(rcpath, 32))) || 0;
+	cleanup_exec_dir(dir, rcpath, dir + '/unused');
 	let reason = trim(output.stderr || '');
 	reason = reason ? replace(reason, /\s+/g, ' ') : '';
 	/* An HTTP-level failure prints the requested URL back into the message
@@ -623,11 +637,13 @@ export function wGETVerbose(url, ua) {
 	if (length(output.stdout || '') > HP_FETCH_CAP)
 		return { content: null, error: `response exceeds the ${HP_FETCH_CAP} byte limit` };
 
-	if (output.exitcode !== 0) {
+	const exitcode = (output.exitcode !== 0) ? output.exitcode : fetch_rc;
+
+	if (exitcode !== 0) {
 		if (length(reason) > 200)
 			reason = substr(reason, 0, 200) + '...';
 
-		return { content: null, error: `fetch exited with status ${output.exitcode}: ${reason || 'no error output'}` };
+		return { content: null, error: `fetch exited with status ${exitcode}: ${reason || 'no error output'}` };
 	}
 
 	/* A binary body is not a failed fetch.
@@ -645,7 +661,9 @@ export function wGETVerbose(url, ua) {
 	if (output.binary)
 		return { content: null, error: 'the fetch succeeded but the response is binary, not a subscription payload' };
 
-	/* head() masks the fetcher's status, so a failed fetch shows up here. */
+	/* Reached only when the fetcher exited 0 (the status is recovered above),
+	 * so an empty body here means a 200 with nothing in it - reported with the
+	 * fetcher's own message rather than as a parse failure. */
 	if (!length(trim(output.stdout)) && reason) {
 		if (length(reason) > 200)
 			reason = substr(reason, 0, 200) + '...';
@@ -682,6 +700,157 @@ export function strToTime(str) {
 
 	/* Preserve values that already carry a time unit (e.g. "30s", "1m") */
 	return match(str, /[a-zA-Z]$/) ? str : (str + 's');
+};
+
+/* Which node transports carry UDP as their own wire format.
+ *
+ * QUIC inside a tunnel whose own transport is TCP is the worst of both
+ * worlds: the QUIC layer retransmits on a schedule that assumes it owns the
+ * path, and the TCP layer underneath retransmits on a schedule that assumes
+ * nothing above it is doing that.  Measured on a router where both candidate
+ * nodes were the SAME server and only the transport differed (anytls on
+ * TCP:443 vs hysteria2 on QUIC/UDP:50466), DNS-over-UDP through the tunnel
+ * came back at 174 ms +/- 1 ms through hysteria2 and produced a 568 ms spike
+ * with 37 ms jitter and outright loss through anytls.  Same server, same
+ * path - the variable really was the transport, not the node.
+ *
+ * A set rather than a list so membership is an object lookup and an unknown
+ * protocol name is simply absent rather than accidentally matching.
+ *
+ * This is the TRANSPORT, not the sing-box build feature: the `with_quic`
+ * marker in htdocs/.../homeproxy-pro.js records whether the binary was compiled
+ * with QUIC support, which is a different question and the wrong thing to
+ * test here. */
+export const UDP_NATIVE_PROTOCOLS = {
+	'hysteria': true,
+	'hysteria2': true,
+	'tuic': true,
+	'wireguard': true
+};
+
+/* Decide whether the UDP leaving this router has a UDP-native path, and say
+ * why.  Used by firewall_post.ut to decide whether QUIC has to be rejected,
+ * and by the diagnostic report to explain it - one definition, two
+ * consumers, because a second copy of this judgement is a copy that drifts.
+ *
+ * Note what this is NOT: a capability check.  A TCP-transport node still
+ * proxies UDP perfectly well, sing-box will tunnel it.  The question is only
+ * whether putting QUIC on that path is a good idea, so `native: false` means
+ * "QUIC would perform badly", never "UDP cannot be proxied".
+ *
+ * Returns { native, configured, protocol, reason }:
+ *   native     - true when the effective UDP path is UDP end to end
+ *   configured - false when there is no UDP node at all (nothing to judge)
+ *   protocol   - the resolved node type, for the log
+ *   reason     - one sentence, safe to print
+ *
+ * WHY THIS READS UCI RATHER THAN TAKING A MODEL, given guard 7 keeps the
+ * semantic layers off the cursor:  the three consumers of this judgement -
+ * the fw4 template, the RPC diagnostic report and (through the exported file)
+ * the shell runtime - do not share a data model.  firewall_post.ut already
+ * reads main_node/main_udp_node straight from UCI for the tproxy chain, so
+ * this is not a new dependency in that file.  The alternative - resolving it
+ * in generator/context.uc from the Loader's model and exporting it - would
+ * make the firewall depend on a value the generator produced, which is the
+ * coupling firewall_post.ut's own header warns against when it reads
+ * node-addr-ips.txt instead of re-deriving node selection.  One function,
+ * three callers, no second opinion: that is the property worth protecting
+ * here.  The uci module is available everywhere this runs (the CI toolchain
+ * builds ucode with -DUCI_SUPPORT=ON).
+ */
+export function udp_transport_verdict(cfgname, cursor_arg) {
+	/* The cursor is a parameter so a caller that already has one - the fw4
+	 * template and the RPC report both do - reuses it instead of opening a
+	 * second view on the same config, and so the unit test can point this at
+	 * a sandbox directory.  Callers on the client path pass nothing and get
+	 * the default confdir. */
+	const uci = cursor_arg ?? cursor();
+	uci.load(cfgname);
+
+	const routing_mode = uci.get(cfgname, 'config', 'routing_mode') || 'bypass_mainland_china';
+
+	/* Custom routing mode is the user driving the rule graph by hand.  They
+	 * have already said what carries what and this function cannot read it,
+	 * so it must not second-guess them - that is the same reasoning the QUIC
+	 * gate used when it keyed on `routing_mode === 'custom'` alone. */
+	if (routing_mode === 'custom')
+		return {
+			native: true,
+			configured: true,
+			protocol: 'custom',
+			reason: 'custom routing mode: the rule graph decides what carries UDP'
+		};
+
+	const udp_node = uci.get(cfgname, 'config', 'main_udp_node') || 'nil';
+	const main_node = uci.get(cfgname, 'config', 'main_node') || 'nil';
+
+	const node_type = (sec) => (isEmpty(sec) || sec === 'nil')
+		? null
+		: (uci.get(cfgname, sec, 'type') || null);
+
+	/* `same` is the case this function was written for.  It is also the
+	 * silent one: the UI label reads "Same as main node", and nothing
+	 * anywhere tells the user that a TCP-transport main node turns every UDP
+	 * flow into a TCP tunnel. */
+	if (udp_node === 'same') {
+		const type = node_type(main_node);
+		if (type === null)
+			return {
+				native: false, configured: false, protocol: 'nil',
+				reason: 'UDP follows the main node and no main node is set'
+			};
+
+		return (UDP_NATIVE_PROTOCOLS[type] === true)
+			? { native: true, configured: true, protocol: type,
+			    reason: sprintf('UDP follows the main node (%s), which is UDP-native', type) }
+			: { native: false, configured: true, protocol: type,
+			    reason: sprintf('UDP follows the main node (%s), which is a TCP transport - QUIC would be tunnelled over TCP', type) };
+	}
+
+	/* The url-test group picks a member per connection, so "all of them" is
+	 * the only answer that holds for every packet: a single TCP member is
+	 * enough to put QUIC back on the stalling path whenever it happens to be
+	 * the selected one. */
+	if (udp_node === 'urltest') {
+		const members = uci.get(cfgname, 'config', 'main_udp_urltest_nodes');
+		if (isEmpty(members))
+			return {
+				native: false, configured: false, protocol: 'urltest',
+				reason: 'the UDP url-test group has no members'
+			};
+
+		let offender = null;
+		for (let sec in members) {
+			const type = node_type(sec);
+			if (UDP_NATIVE_PROTOCOLS[type] !== true && offender === null)
+				offender = type || 'unknown';
+		}
+
+		return (offender === null)
+			? { native: true, configured: true, protocol: 'urltest',
+			    reason: sprintf('every member of the UDP url-test group is UDP-native (%d members)', length(members)) }
+			: { native: false, configured: true, protocol: offender,
+			    reason: sprintf('the UDP url-test group contains a TCP-transport member (%s) - QUIC would be tunnelled over TCP whenever it is selected', offender) };
+	}
+
+	if (udp_node === 'nil')
+		return {
+			native: false, configured: false, protocol: 'nil',
+			reason: 'UDP is disabled: no UDP node is configured'
+		};
+
+	const type = node_type(udp_node);
+	if (type === null)
+		return {
+			native: false, configured: false, protocol: 'nil',
+			reason: sprintf('the UDP node "%s" does not exist', udp_node)
+		};
+
+	return (UDP_NATIVE_PROTOCOLS[type] === true)
+		? { native: true, configured: true, protocol: type,
+		    reason: sprintf('the UDP node is %s, which is UDP-native', type) }
+		: { native: false, configured: true, protocol: type,
+		    reason: sprintf('the UDP node is %s, which is a TCP transport - QUIC would be tunnelled over TCP', type) };
 };
 
 /* Turn a UCI list of port strings into the int array sing-box wants

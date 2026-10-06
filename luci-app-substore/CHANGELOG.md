@@ -2,6 +2,431 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.2-r7] - Loon 丢弃 Hysteria v1、skip-cert-verify 改写 true（LEGACY_ISSUES 7.9 g/h）
+
+第五轮新发现里经决策要实施的两条。第三条（协议名大小写）决定保持现状。
+
+### 修复 — 7.9(g)：Loon 丢弃 Hysteria v1
+
+Loon 的节点类型清单里只有 **Hysteria2**（`nsloon.app/docs/Node/`），本生成器却会把
+统一模型里的 hysteria v1 节点也输出成一条 Loon 读不懂的行。现在
+`FAMILY_CAPS.loon` 加 `hysteria = false`，整条丢弃 —— 与丢弃 wireguard / ssr
+同一约定。**hysteria 2 是各家通用的**，被丢的只有上一代 v1。
+
+顺带把 `surge_config` 的过滤逻辑改成数据驱动：此前是逐协议写死的
+`elseif p == "ssr" and not caps.ssr` / `elseif p == "vless" and not caps.vless`，
+每加一个维度就要再加一条分支，**漏掉的那条默认是「保留」** —— 这正是本条缺陷的
+成因（`hysteria` 从没进过这张表）。现在是 `elseif caps[p] == false`，标一个键即可。
+
+### 修复 — 7.9(h)：`skip-cert-verify` 写 `true` 而不是 `1`
+
+Loon 文档的示例就是 `skip-cert-verify=false`，直接证明 `false` 是合法字面量、
+`true` 同理；而 Surge 手册的 TLS 页只写「Optional, boolean, default: false」，
+两家的文档里都找不到 `1` 这个取值。解析端两种都认，回环不受影响。
+
+### 保持现状 — 7.9(i)：协议名大小写
+
+Loon 文档写 `VMess` / `Hysteria2`（首字母大写），本生成器用小写。无证据显示小写会
+失败（Loon 定位是兼容 Surge 配置，Surge 手册的语法行就是小写），改动面却覆盖全部
+协议 —— 不改。
+
+### 测试
+
+* `tests/protocol_registry_test.lua`：`hysteria` 的丢弃表加 `loon` 一条。
+* `tests/output_formats_test.lua`：新增 (g) 5 条 / (h) 4 条断言（含回环）。
+* 反向验证：两条改动各自改回旧行为，确认测试变红。
+* 全套 **59 个测试文件、0 失败**。
+
+### 本轮新发现（未实施，记录在 LEGACY_ISSUES）
+
+(j) **Surge 家族同样没有 Hysteria v1** —— `manual.nssurge.com/policies/hysteria.html`
+返回 404 而 `hysteria2.html` 存在，手册的协议清单写的也是 "Hysteria 2"。也就是
+Surge / SurgeMac 的 `hysteria` 行同样读不懂。本轮**没有**顺手改 —— (g) 的决策只
+点名了 Loon。测试里有一条断言如实钉住当前行为，实施 (j) 时一并翻转。
+Surfboard 未获证据（其 external-proxy 文档页本轮返回 404）。
+
+## [2.7.2-r6] - Loon / Surge 家族写法按官方文档对齐（LEGACY_ISSUES 7.9）
+
+`docs/LEGACY_ISSUES.md` 第七节 2.7.2 审计新发现的**第五轮**修复：(a)(b)(c)(d)
+全部实施，(e) 保持保守。改动集中在 `output_formats.surge_line`（生成端）与
+`parser_surge.parse_surge_line`（解析端）—— 两端必须成对，否则导出的配置再导入
+回来会**静默丢字段**。
+
+### 修复 — 7.9(a)：Loon 的 TLS 开关是 `over-tls`，Trojan 例外
+
+Loon 文档（`nsloon.app/docs/Node/`）通篇用 `over-tls=true`，从没把 `tls` 列为
+它的别名；本生成器此前对 Loon 也写 Surge 的 `tls=true`。若 Loon 忽略它，vmess /
+vless / trojan 会按明文连 —— 包括 Reality 节点（公钥写了、TLS 标志却没生效）。
+
+```lua
+local tls_flag = is_loon and "over-tls=true" or "tls=true"
+```
+
+**Trojan 反过来**：Loon 文档的明文与 Reality 两条示例都**没有**任何 TLS 键
+（Trojan 本身建立在 TLS 之上），所以 Loon 的 trojan 行整个不写 TLS 参数。
+Surge 家族的 `tls=true` 是文档要求的，保持不变。
+
+### 修复 — 7.9(b)：Loon 的 UDP 参数是 `udp`
+
+Loon 文档每个示例都写 `udp=true`，`udp-relay` 一次都没出现。Surge 家族仍用
+`udp-relay=true`。
+
+### 修复 — 7.9(c)：Surge 家族补上 vmess 的 `encrypt-method`
+
+Surge 手册的 vmess 页有具名参数 `encrypt-method`，取值只有 `aes-128-gcm`
+（默认）与 `chacha20-ietf-poly1305`。本生成器此前只写 `username=`，于是 cipher 是
+chacha20 的节点被 Surge 按默认的 `aes-128-gcm` 去连 —— **静默用错算法**。新增
+`SURGE_VMESS_CIPHER` 做拼写映射（模型写 `chacha20-poly1305`，客户端写
+`chacha20-ietf-poly1305`）。映射不到的取值（`zero` / `none` / `auto` /
+`aes-128-cfb`）不写该参数、节点保留。
+
+### 修复 — 7.9(d)：Loon 的 ss / ssr / hysteria2 凭据是位置参数
+
+```
+Shadowsocks,服务器,端口,加密方式,"密码"
+ShadowsocksR,服务器,端口,加密方式,"密码",protocol=…,obfs=…
+Hysteria2,服务器,端口,"密码"
+```
+
+此前一律写具名的 `encrypt-method=` / `password=` —— 落在 Loon 的语法里就是第 4、
+5 个位置参数各拿到一串 `key=value` 文本，加密方式解析不出来、密码也不再是密码，
+节点必然连不上。ssr 的 `protocol=` / `obfs=` 及其参数仍是具名。
+
+### 同步修改解析端（并修掉一个既有缺陷）
+
+`parse_surge_line` 补上位置参数提取，保住「Loon 输出 → 导入」回环。其中
+**SSR 此前根本没有取字段的分支** —— 不论哪种写法导入，加密方式、密码、协议插件、
+混淆方式全是 nil，节点带着空凭据进入统一模型，导出时再被静默丢掉。这是本轮顺带
+修掉的既有缺陷，不是 (d) 引入的。
+
+### 保持保守 — 7.9(e)
+
+值里含英文逗号时仍按「整条丢弃」处理。Loon 的引号按文档确实能保住逗号，但本行的
+具名参数一律不带引号，同一行混用两种约定会让「哪个值被包裹」变成依赖客户端实现的
+行为。已加断言钉住这个选择。
+
+### 测试
+
+* `tests/ssr_test.lua`：`loon encrypt-method` 一条改为断言位置参数写法，新增 9 条
+  Loon 输出 → 导入回环断言。
+* `tests/output_formats_test.lua`：新增 7.9 专节 24 条断言。
+* 反向验证：逐条把代码改回旧行为，确认测试变红（3 / 2 / 2 / 2 / 5 / 1 / 1 条 FAIL），
+  还原后全部 PASS。
+* 全套 **59 个测试文件、0 失败**。
+
+### 本轮新发现（未实施，记录在 LEGACY_ISSUES）
+
+(g) Loon 的节点类型清单里没有 Hysteria v1，本生成器仍会输出 `hysteria` 行；
+(h) `skip-cert-verify=1` 这个取值两家文档都没写；(i) 协议名大小写（Loon 文档用
+首字母大写，本生成器用小写）。三条都只记录、不动代码。
+
+## [2.7.2-r5] - 后端错误串 msgid 化（LEGACY_ISSUES 7.7）
+
+`docs/LEGACY_ISSUES.md` 第七节 2.7.2 审计新发现的**第四轮**修复。
+
+### 修复 — 7.7-A：后端不再有中文字面量
+
+`root/usr/share/substore/*.lua` 里的失败原因会经两条路到达用户 —— 控制器
+`back_to_list` / `back_to_nodes` 的 `?err=`，以及 `meta.error`（视图里的
+`msg.translate`）。这些串此前**硬编码成中文**：英文界面下冒出中文，而且它们
+永远进不了翻译表。现在全部改为**语言中立的英文 msgid**，翻译只发生在显示边界。
+
+**这是硬约束不是风格选择**：后端模块**不能** `require("luci.i18n")` ——
+`substore-cron.sh` 会在独立的 lua 进程里跑 `core.sync`，那里没有 LuCI 环境。
+
+### 新增 `msg.lua` —— 组合消息的拼接与还原
+
+「msgid 前缀 + 动态值」这类消息（`"Invalid proxy config: " .. reason`）整体查表
+必然落空，前缀那半句就永远翻译不了。`msg.lua` 用分隔符 `"\1"` 把各段拼起来，
+显示边界按分隔符**逐段**查表：
+
+```lua
+msg.compose("Target actually connects to a private/reserved address (", ip, ")")
+msg.join("Unsupported proxy protocol: ", scheme)     -- compose 的两段简写
+msg.compose_list(names, " + ")
+msg.translate(s, translate)                          -- 逐段查表
+```
+
+分隔符选 `"\1"`（SOH）有两个依据：它不会出现在任何合法取值里（URL / 主机名 /
+User-Agent / 端口 / 协议名在 `http.lua` 里都校验过）；`util.json_encode` 会把控制
+字符转义成 `\u0001`，所以组合消息**存进 `meta.error` 再读回来仍然完好**。
+拆分只按**第一个**分隔符切、剩下的递归处理，嵌套天然成立 —— 全程精确，没有
+启发式匹配。对已翻译过的串幂等（不含分隔符 → 整串查表落空 → 原样返回）。
+
+### 顺带修掉的一个既有缺陷
+
+控制器此前把**已翻译**的串写进持久化的 `meta.error` —— 中文管理员触发的失败原因
+会泄漏到英文管理员的界面上。现在存的是 msgid，读它的会话按自己的语言翻译。
+
+### 顺带修正的三条用户可见文案
+
+扫描时发现它们**已经会到达用户**、却漏在翻译表之外（中文界面下显示英文）：
+
+| 位置 | 此前 | 现在 |
+|---|---|---|
+| `parser.lua` | `"bad wireguard conf: no [Peer]"` | `"A WireGuard .conf file has no [Peer] section"` |
+| `parser.lua` | `"bad wireguard conf: no usable [Peer] endpoint"` | `"A WireGuard .conf file has no [Peer] with a usable Endpoint"` |
+| `output.lua` / `output_formats.lua` | `"unsupported format: " .. fmt` | `msg.join("Unsupported output format: ", fmt)` |
+
+其余 `"bad ss"` / `"no scheme"` 之类**不动** —— 它们只用于决定「这一行要不要丢」，
+原因串被 `parse_lines` 丢掉，不是用户可见文案。
+
+### 保留的中文字面量（唯一一处）
+
+`node.lua` 的 `"[^,%s，]+"`：这是**正则字符类**，全角逗号是模式的一部分，翻译它
+会破坏「香港，日本」这类全角分隔写法的关键词拆分。测试里按字面量内容列为显式
+例外，并断言例外必须仍存在于源码中。
+
+### 翻译表
+
+`po/zh_Hans/substore.po` 新增 **81 条**。其中 `"JSON"` / `"Clash YAML"` /
+`"WireGuard .conf"` 是**恒等译文**（格式专名，中文界面下原样显示）—— 写成显式
+条目是为了让「每个 msgid 都有译文」这条不变式保持机械可检。
+
+### 回归测试
+
+新增 `tests/backend_i18n_test.lua`（**15 条断言**）：A 扫全部后端源码不得含 CJK；
+B 只认三种**语法位置**（`return` 语句 / `error =` 字段 / `msg.*` 的参数，外加
+`FORMAT_LABELS` 的表值）来核对译文齐全，不靠猜；B2 用**调用** `util.human_duration`
+的方式断言其返回值逐段可译；B3 单独查控制器里裸写、会被持久化的 `error = "…"`。
+
+两条**反腐烂**断言：排除表 `NOT_MESSAGES` 里每一项都必须仍能在源码里找到；
+po 的后端段里不能有死条目。另有非空性断言（`checked >= 70`，当前约 80），
+防止正则写错时静默变成假绿。排除表**逐条列举**（30 条：17 条逐行解析诊断 +
+5 条 shell 片段 + 8 条 YAML/INI 模板片段）而不是按模式匹配 —— 新增一条就得做一次
+有意识的判断。
+
+**同步修改的既有测试（9 个）**：此前断言旧中文字面量的
+`core_userinfo_test` / `data_integrity_test` / `dns_fallback_test` / `list_lock_test` /
+`network_security_test` / `p1_fixes_test` / `p2_batch7_test` / `parser_mixed_format_test` /
+`wireguard_conf_test` 改为断言 msgid 形态。其中 `p2_batch7_test` 的改名规则断言改为
+对**渲染后**的串断言 —— 组合消息在 `"line "` 与数字之间插了分隔符，断言用户真正
+看到的东西才是对的。
+
+**反向验证**：临时在 `probe.lua` 末尾加一条 `return nil, "A brand new untranslated
+message"` 后跑 `tests/backend_i18n_test.lua`，得到 **1 条 FAIL**，确认扫描面不是
+空转；还原后 **15 条全 PASS**。全套 **59 个测试文件、0 失败**。
+
+### 文档
+
+- `docs/LEGACY_ISSUES.md`：状态表 7.7 → 已实施；新增「第四轮修复记录」。
+
+## [2.7.2-r4] - 真正实现 Egern 的 YAML 生成器（LEGACY_ISSUES 7.2）
+
+`docs/LEGACY_ISSUES.md` 第七节 2.7.2 审计新发现的**第三轮**修复。
+
+### 修复 — 7.2-A：Egern 不再输出 Surge 逗号行，改为真正的 YAML
+
+选 Egern 格式导出的内容此前是 **Surge 的逗号行**（`output_formats.to_egern` 就是
+`surge_config(nodes, name, "egern")`），而 Egern 的配置是 YAML —— 用户拿到的东西
+Egern 根本读不了，且导出时没有任何提示。
+
+新增 `root/usr/share/substore/output_egern.lua`，并删除 `output_formats.to_egern`
+与其 `M.generate` 分支；`output.lua` 的分发改走新模块，下载后缀由 `.conf` 改为
+`.yaml`。结构逐字段对照官方示例（`egernapp.com/docs/configuration/example/`）与
+协议字段表（`.../configuration/proxies/`），无推测项：
+
+- `proxies:` 是顶层列表，每项是**单键映射**，键名即小写协议名（`- shadowsocks:`），
+  字段名一律 **snake_case**（`user_id` / `peer_public_key` / `skip_tls_verify` /
+  `udp_relay` / `obfs_password` / `service_name` / `local_ipv4` / `udp_relay_mode`）。
+- vmess / vless 的传输层是 `transport:` 子映射，键名是传输类型本身
+  （`tls` / `ws` / `wss` / `grpc` / `http2`）。**TLS 也是其中一种**，没有顶层
+  `tls:` 开关 —— 「明文 tcp」就是完全不写 `transport`。
+- Reality 的嵌套位置**按协议分叉**：vmess / vless 在 `transport.<类型>.reality` 里，
+  trojan / anytls 是节点顶层的 `reality:` 对象；键名 `public_key` / `short_id`。
+- `policy_groups:` 同为顶层列表，`select` 用 `policies:`；空列表兜底 `DIRECT`。
+
+**顺带修正的两处既有行为**（都由 `protocol_registry_test` 的 `DROPPED` 表锁定）：
+
+| 协议 | 此前 | 现在 | 原因 |
+|---|---|---|---|
+| wireguard | 丢弃 | **保留** | Egern 的 WireGuard 有独立协议块，YAML 能完整表达（Surge 的单行 `[Proxy]` 表达不了） |
+| hysteria (v1) | 保留 | **丢弃** | Egern 的协议清单里只有 Hysteria2；v1 的 `obfs` 是普通字符串、没有 `obfs_password`，拿 v2 的键去顶会让客户端按错误的协议去连 |
+
+YAML 标量转义从 `output_clash_meta.lua` 导出为 `M.esc_yaml` 共用（另抄一份必然
+漂移 —— 「未加引号的 `password: %foo` 会让客户端拒绝整份配置」是同一个坑）。
+`Content-Type` 保持 `text/plain; charset=utf-8`，与同类的 clash / clashmeta / stash
+一致；`FAMILY_CAPS` 里的 egern 行删除（能力判定搬进 `EGERN_KEY`）。
+
+**未做的一处（不猜）**：vmess 的 `legacy` 只在节点显式带该字段时输出。官方文档
+没有给出「`alterId > 0` ⇒ `legacy: true`」的对应关系，本仓库也没有 `alterId` 字段，
+不臆测映射。
+
+### 回归测试
+
+新增 `tests/output_egern_test.lua`（**63 条断言**）：顶层结构、逐协议字段名、
+transport 嵌套（ws / wss / grpc / http2）、Reality 的两种嵌套位置、SSR 与
+Hysteria v1 的整条丢弃、名字唯一性与重命名、YAML 转义、端口兜底、格式注册。
+`tests/protocol_registry_test.lua` 的 `DROPPED` 表按上表改（删 `wireguard.egern`、
+加 `hysteria.egern`）；`tests/anytls_reality_test.lua` 的 egern 断言从「具名密码、
+无 reality」改为 YAML 形态。
+
+**反向验证**：把 `output.lua` 与 `output_formats.lua` stash 掉（保留全部新测试）
+后跑 `tests/output_egern_test.lua`，得到 **53 条 FAIL**（旧代码走 `to_egern`，
+输出的是逗号行）；`git stash pop` 后 **0 条 FAIL**，全套 58 个文件、0 失败。
+
+### 文档
+
+- `docs/LEGACY_ISSUES.md`：状态表 7.2 → 已实施；新增「第三轮修复记录」含反向
+  验证；「实测探针」的修复后段更新为 `[2.7.2-r4]` 的真实 Egern YAML 输出。
+- `README.md` / `README.en.md`：协议清单的出处补充 `EGERN_KEY`（Egern 的清单
+  不在 `FAMILY_CAPS` 里）。
+
+## [2.7.2-r3] - 按客户端协议清单过滤，并按各家文档修正 Loon / QX 的 Reality 与凭据写法（LEGACY_ISSUES 7.1 / 7.3 / 7.4）
+
+`docs/LEGACY_ISSUES.md` 第七节 2.7.2 审计新发现的**第二轮**修复。改动全部落在
+输出侧 `output_formats.lua`，解析侧一行未改 —— 三处新写法早就有对应的读取实现，
+往返由新增的回归测试锁定。本轮同时把为实施 7.4 而核对 Loon 文档时新发现的一批
+不一致记为 **7.9**（未实施，待决策），其中 (a) 会直接影响 Reality 在真机 Loon 上的
+收益，见下。
+
+### 修复 — 7.1：按客户端的协议清单过滤（`FAMILY_CAPS`）
+
+此前 `surge_config` 的调用点各传一个 `supports_ssr` 布尔量，于是 Surge 格式会为
+VLESS 节点生成代理行 —— 而 Surge / Surfboard / SurgeMac 的官方协议清单里都没有
+VLESS。新增一张能力表，只记录各家**不一致**的 `vless` / `ssr` 两个协议：
+
+| flavor | vless | ssr | 依据 |
+|---|---|---|---|
+| surge / surfboard / surgemac | ✗ | ✗ | `manual.nssurge.com` 的 Proxy Protocols、`getsurfboard.com` 的 external-proxy |
+| loon | ✓ | ✓ | `nsloon.app/docs/Node/` 有独立的 VLESS 与 ShadowsocksR 两节 |
+| egern | ✓ | ✗ | `egernapp.com/docs/configuration/proxies/` 有 Vless、无 ssr |
+
+`surge_config(nodes, group_name, flavor)` 改为查表丢节点；五个调用方传格式名。
+用表而不是再加一个布尔参数：加一个维度就要再加一个参数，调用点一多必然漏传，
+而漏传的默认值是「支持」—— 症状正是本轮要修的这个（导出里多出客户端读不懂的行，
+且不报错）。
+
+### 修复 — 7.3-C：QX 带 Reality 公钥的 vmess / vless 改用 `obfs=` 形式的 TLS 标志
+
+QX 官方 `sample.conf` 的注释把「该行带 TLS 标志」列为 `reality-base64-pubkey`
+生效的前提，而 QX 里 vmess / vless 的 TLS 标志写作 `obfs=over-tls`（纯 TLS）/
+`obfs=wss`（ws + TLS），trojan / anytls 才写 `over-tls=true` + `tls-host=`。
+此前一律走 `qx_tls()`（`tls-host=` + `tls-verification=`），QX 会忽略公钥，
+节点静默退回普通 TLS。新增 `qx_obfs_reality()`，**只对带 `public-key` 的**
+vmess / vless 生效 —— 不带公钥的完全不动，既有 QX 节点的输出形态不变，
+风险面只落在本次新加的 Reality 功能上。
+
+### 修复 — 7.4-A：Loon 的凭据改为带引号的位置参数，公钥按文档加双引号
+
+Loon 文档的节点行是 `Trojan,h,p,"密码"`、`VLESS,h,p,"UUID"`、
+`VMess,h,p,加密方式,"UUID"`（`nsloon.app/docs/Node/`），而本生成器一律写具名
+`password=` / `username=`。新增 `loon_positional()` 改写 Loon 的
+trojan / vmess / vless；Reality 的 `public-key` 加双引号、`short-id` 不加。
+
+**Surge / Surfboard / SurgeMac 维持具名写法** —— 复核确认它们本来就是对的：
+`getsurfboard.com` 的 vmess 页示例与 Surge 手册的 vmess / trojan 页都写
+`username=` / `password=`（`LEGACY_ISSUES` 的 7.4 行原先把 Surfboard 与 Loon
+并列，是误判，已更正，详见 7.9 的 (f)）。
+
+实施中一并修掉两个**本轮改动自身**会引入的问题：
+
+- **Loon 的 VMess 加密方式拼写不同**：模型的 `chacha20-poly1305` 在 Loon 里写作
+  `chacha20-ietf-poly1305`，模型的 `zero` 是 Xray 专用（Loon 清单里没有）。
+  照抄会让这两类节点在 Loon 上加载失败 —— 新增 `LOON_VMESS_CIPHER` 映射，
+  未列出的取值退回 `auto`。这是位置参数化必须配套的一步。
+- **带引号的位置参数遇到值里的双引号**：`'"'..v..'"'` 在 `v` 含 `"` 时产出
+  `"pa"ss"`，怎么切没有文档依据 —— 这种值整条丢弃。顺带修掉了**既有**的同类
+  缺陷：anytls 的 Loon 位置参数（7.4 之前就带引号）此前没有这层防护。
+
+### 文档
+
+- `docs/LEGACY_ISSUES.md`：状态表更新；新增 **7.9 明细**（Loon 的 `over-tls` vs
+  `tls`、`udp` vs `udp-relay`、Surge 家族 vmess 缺 `encrypt-method`、Loon 其余
+  协议的位置参数、以及「Loon 的双引号其实**能**保住逗号」这一更正）；
+  新增「第二轮修复记录」含反向验证表。
+- `README.md` / `README.en.md`：SSR 可输出的客户端清单里删掉 **Egern**
+  （其协议清单只有 Shadowsocks，没有 SSR），并补 VLESS 的同类说明。
+- 更正 `output_formats.lua` 里「Loon 的那对引号只是标记，值里的逗号照样是分隔符」
+  这句 —— 与 Loon 文档相反，实际是能保住的；实现仍按「含逗号就丢弃」处理（保守，
+  理由写在该处注释里）。
+
+### 回归测试
+
+`tests/anytls_reality_test.lua` 由 110 条扩到 **143 条**：Loon 位置参数与公钥引号、
+Surge 家族整体丢 vless、QX `obfs=` 分叉与「不带公钥维持原样」的对照、QX 往返、
+**Loon 端到端往返**（生成的配置用本仓库自己的解析器读回来，含「`[Proxy Group]`
+段不得被当成节点」）、加密方式映射、双引号边界。`tests/protocol_registry_test.lua`
+的 `DROPPED` 表补 `vless`(surge/surfboard/surgemac) 与 `ssr`(egern)；
+`tests/output_layer_fixes_test.lua` 的 F6 改挂在 Loon 上（surge 侧该节点已被整体
+丢弃，传输层已无从观察）。
+
+**反向验证**：把 `output_formats.lua` stash 掉（保留全部新测试）后跑三个受影响的
+文件，得到 **20 条 FAIL**（`anytls_reality_test` 16 / `output_layer_fixes_test` 2 /
+`protocol_registry_test` 2），症状与预测逐条对应（QX 写的是 `tls-host` 而非
+`obfs=`；Loon 公钥无引号、凭据是具名；surge/surfboard/surgemac 仍输出 vless 节点；
+`want dropped got true`）。`git stash pop` 后 **0 条 FAIL**，全套 57 个文件、0 失败。
+
+### 待决策（7.9）
+
+**7.9 (a)**：Loon 的 TLS 开关文档写作 `over-tls=true`，本生成器写 `tls=true`
+（Surge 的写法）。Loon 文档**没有**把 `tls` 列为 `over-tls` 的别名，也没说会被
+拒绝 —— 若被忽略，Loon 上的 vmess / vless / trojan 会按明文连，**包括本轮
+Reality 节点**（公钥写了、TLS 标志却没生效）。这条不修，7.4-A 与 Reality 支持
+在真机 Loon 上的收益都要打折。
+
+## [2.7.2-r2] - 修复 Surge 系 / Loon / QX 行解析的字段级缺陷（LEGACY_ISSUES 7.5 / 7.6）
+
+`docs/LEGACY_ISSUES.md` 第七节 2.7.2 审计新发现的**第一轮**修复。两项都在
+`parser_surge.lua`，即「导入别人的 Loon / Surge / QX 配置」这条路径上。
+
+### 修复 — 行拆分改为引号感知（7.5）
+
+Loon 把凭据写成双引号包裹的位置参数（`nsloon.app/docs/Node/`）：
+
+```
+Trojan = Trojan,trojan.example.com,443,"password",transport=tcp,...
+```
+
+密码里含逗号时，旧的 `rest:gmatch("[^,]+")` 会把它切成两段 ——
+`"pa,ss"` 静默变成 `"pa`（多一个引号、少掉后半段），用户拿到的不是他填的凭据，
+而且没有任何提示。生成端早就有「值里含逗号就整条丢弃」的防护
+（`output_formats.surge_line`），解析端此前没有对应处理。
+
+新增 `split_fields()`，`parse_surge_line` 与 `parse_qx_line` 的切分都改走它：
+
+- **引号个数为奇数时不做引号感知**，退回旧的按逗号切分。订阅内容不可信，落单的
+  引号若被当成「开引号」，会把后面的 `sni=` / `over-tls=` 全吞进同一个字段，
+  比按逗号切更糟。
+- 偶数时按引号开合切分，引号内的逗号不再是分隔符；引号本身保留在字段里，
+  由既有的 `unquote()`（Loon 位置参数）或原样（QX 的 kv 值）处理。
+- **无引号的输入与旧实现逐字符等价**：同样按逗号切、同样丢弃空字段、同样 trim。
+
+### 修复 — Loon 的 transport= / path= / host= 未映射（7.6）
+
+Loon 文档的传输写法是 `transport=<tcp|ws|http>` + `path=` + `host=`，旧参数
+`ws=true` / `ws-path` / `ws-headers=Host:` 只是兼容别名（`nsloon.app/docs/Node/`）。
+此前只认旧写法，于是别人给的 Loon ws 节点导入后 `net` 保持默认 `tcp`、
+`path` / `host` 全丢 —— 导出到任何格式都按 tcp 去连一个只开了 ws 的端口，
+**握手失败且不报错**。
+
+`parse_surge_line` 增加这三个映射（`transport=http` 按 Loon 文档「会按 WebSocket
+处理」落成 `ws`），放在旧写法之后：同一行两种写法都出现时**以新写法为准**。
+
+### 测试
+
+新增 `tests/parser_surge_fields_test.lua`（36 条断言）：两个缺陷的修复点、旧写法
+回归、无引号输入的逐字符等价、空字段边界、奇数引号边界、「新写法优先」，
+以及 Reality 参数不受影响的回归。
+
+**反向验证**：把 `parser_surge.lua` stash 掉后跑该文件得到 **12 条 FAIL**，症状与
+预测完全一致（被截断的凭据、`net=tcp`、`path` / `host` 为 nil、旧写法胜出）；
+恢复后 0 条 FAIL。全套 57 个文件、0 失败（`age_test.lua` 随 7.8 一并删除，故为 57）。
+
+### 文档 / 构建
+
+- **更正未经证实的结论**：`output_formats.lua`、`tests/anytls_reality_test.lua`
+  与 `LEGACY_ISSUES.md` 里写的「Surge 遇到无法解析的代理行会拒绝加载整份配置」
+  **没有官方依据** —— Surge 官方只说明过无法识别的 *section* 会原样保留且不报错。
+  相关注释改为「不输出客户端读不懂的东西」，与本仓库丢弃 wireguard / ssr 同一约定。
+- **CI 修复**：编译前写入 `CONFIG_LUCI_LANG_zh_Hans=y` 再 `make defconfig`。
+  `luci-i18n-substore-zh-cn` 是 HIDDEN 包（无 Kconfig prompt），luci.mk 给它的
+  唯一默认值是 `LUCI_LANG_zh_Hans||(ALL&&m)`，而 SDK 默认 `ALL=n` —— 不显式打开
+  这个符号，翻译包就不会被编译出来，`Collect artifact` 的守卫会失败。
+  （`CONFIG_PACKAGE_luci-i18n-substore-zh-cn=m` 对无 prompt 的符号是空操作。）
+- `docs/BUILD.md`：更正不存在的 `make package/luci-i18n-substore-zh-cn/compile`
+  目标（make 目标按**目录**生成），补上语言符号的说明。
+
 ## [2.7.2-r1] - 新增 AnyTLS 与 Reality 支持；控制器文案接入 i18n；简体中文翻译拆成独立包
 
 `core.lua` `M.version` 由 2.7.1 升至 2.7.2。本节包含 2.7.1-r5 之后未发布的两批
@@ -37,8 +462,9 @@ All notable changes to this project will be documented in this file.
     reality 参数）。
   - QX：`reality-base64-pubkey` / `reality-hex-shortid`。
   - Surge 家族：**只有 Loon** 输出 `public-key` / `short-id`（`REALITY_FLAVORS`）；
-    Surge / Surfboard / SurgeMac / Egern 写这两个键是「客户端不认识的参数」，
-    Surge 遇到无法解析的代理行会拒绝加载整份配置。
+    Surge / Surfboard / SurgeMac / Egern 写这两个键是「客户端不认识的参数」。
+    （本行原文写的是「Surge 遇到无法解析的代理行会拒绝加载整份配置」——
+     该说法**无官方依据**，已在 `[2.7.2-r2]` 更正，见上一节「更正未经证实的结论」。）
 
 ### 修复（本轮代码级审计发现）
 

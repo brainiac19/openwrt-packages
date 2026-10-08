@@ -7,11 +7,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=default-settings
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 PKG_LICENSE:=GPLv3
 PKG_LICENSE_FILES:=LICENSE
 
-DEFAULT_SETTINGS_BUILD_DATE:=$(shell date +%y.%-m.%-d)
+DEFAULT_SETTINGS_BUILD_DATE:=$(shell TZ=Asia/Shanghai date +%y.%-m.%-d)
 PKG_CONFIG_DEPENDS:=DEFAULT_SETTINGS_BUILD_DATE
 
 include $(INCLUDE_DIR)/package.mk

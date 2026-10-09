@@ -136,7 +136,7 @@ install_download() {
 # puts in place.  reload does not re-render it (measured on the device: the
 # command returns 0, the file's mtime does not move, the set keeps its old
 # elements).  So the two halves would read the same file on different days,
-# and the gap grows with every nightly update.
+# and the gap grows with every update.
 #
 # The direction that matters is the one where the kernel is *ahead* of the
 # file: a segment the list has since dropped still matches the set, and
@@ -155,7 +155,7 @@ install_download() {
 #
 # Every failure is non-fatal on purpose.  A list that is installed but not yet
 # in the firewall is the one state this script is allowed to leave behind:
-# the next nightly run, or the next service start, closes it.  Failing the
+# the next scheduled run, or the next service start, closes it.  Failing the
 # update instead would turn a cosmetic lag into a resource that can never
 # refresh.
 sync_firewall_sets() {
@@ -421,19 +421,39 @@ case "$1" in
 	# nft set and the generated route rule-set, so the two readers cannot drift.
 	#
 	# Why this source and not the 1715173329/IPCIDR-CHINA lists r46 shipped:
-	# measured against the APNIC delegated statistics (the registration data
-	# every other list is derived from, not another third-party CN list), the
-	# old pair missed 62,927,616 CN IPv4 addresses - 18.2% of every address
-	# APNIC has allocated to CN - while cn.list misses 1,519,872 (0.44%).  The
-	# biggest of those gaps are 59.192.0.0/21 and 175.48.0.0/21, Beijing
-	# Telecom backbone ranges, so the cost was not theoretical: destinations
-	# resolving into them missed the mainland rule and went to the proxy.
+	# the old pair missed 62,927,616 CN IPv4 addresses while cn.list misses
+	# 1,519,872.  The biggest of those gaps are 59.192.0.0/21 and
+	# 175.48.0.0/21, Beijing Telecom backbone ranges, so the cost was not
+	# theoretical: destinations resolving into them missed the mainland rule
+	# and went to the proxy.
 	#
 	# cn.list's precision is slightly looser than the old lists' (99.22% of the
 	# addresses it lists are CN, against 98.92% before - i.e. it is better on
 	# both axes), because it merges neighbouring blocks a little more coarsely
 	# than MaxMind does.  IPv6 goes from 1031 to 3446 entries, which also closes
-	# the 7.93% overlap with the APNIC CN IPv6 blocks the old ipv6.txt had.
+	# an overlap the old ipv6.txt had.
+	#
+	# CORRECTION (2026-10-08).  The two paragraphs this replaces measured both
+	# sources against the APNIC **delegated** statistics and called that the
+	# authority - "the registration data every other list is derived from".
+	# It is not.  That file's `cc` column is the registry's coarse summary and
+	# loses sub-allocations: it reports 8.128.0.0/10 as SG, while the registry's
+	# own RDAP object for that range says CN (ALICLOUD).  So the "0.44% missing"
+	# figure was measured against a yardstick that is itself wrong, and cannot
+	# be used to argue this source is accurate.  Against RDAP the two lists
+	# each have errors in OPPOSITE directions - of cn.list's 6163 IPv4 CIDRs,
+	# 1054 (about 100 million addresses) are CN per RDAP but absent here, while
+	# e.g. 117.134.222.0/23 is PK per RDAP and is wrongly listed as CN.
+	#
+	# What justifies this source is therefore narrower and more honest than the
+	# numbers it replaced: it measurably beats the r46 pair on both recall and
+	# precision, it is a file in a git repository so the blob-id check above
+	# vouches for it, and one text file feeds both readers so they cannot drift.
+	# The delegated statistics were evaluated as a *replacement* source and
+	# rejected - deriving the lists from them loses the ~100 million addresses
+	# above.  To re-judge any source here, measure against RDAP
+	# (https://rdap.apnic.net/ip/<address>), which is the registry database
+	# rather than a summary of it.
 	# $api_path, not $listname: the commits filter asks where the file is in
 	# the repo, which for this source is not the repo root.
 	check_list_update "$1" "MetaCubeX/meta-rules-dat" "meta" "cn.list" \

@@ -24,7 +24,7 @@ var CSS = [
   '.cl-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}',
   '.cl-card .lbl{font-size:11px;opacity:.55;margin:0}',
   '.cl-card-tools{display:flex;align-items:center;gap:6px}',
-  '.cl-icon-btn{border:0;background:transparent;padding:0;width:16px;height:16px;line-height:16px;font-size:13px;opacity:.55;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:inherit}',
+  '.cl-icon-btn{border:0;background:transparent;padding:0!important;margin-left:0;width:16px!important;height:16px!important;min-height:0!important;line-height:16px!important;font-size:13px;opacity:.55;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:inherit;text-transform:none;transform:none!important}',
   '.cl-icon-btn:hover{opacity:.9}',
   '.cl-icon-btn.is-loading{animation:cl-spin 1s linear infinite;pointer-events:none;opacity:.75}',
   '.cl-card .val{font-size:11px;font-weight:500;word-break:break-all}',
@@ -40,7 +40,10 @@ var CSS = [
     '.cl-badge-sync{background:rgba(128,128,128,.08);color:rgba(128,128,128,.92);border-color:rgba(128,128,128,.35)}',
     '.cl-service-tools{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}',
     '.cl-service-label{font-size:11px;font-weight:600;opacity:.62}',
-    '.cl-service-switch{position:relative;width:48px;height:26px;border:0;border-radius:999px;background:rgba(128,128,128,.22);padding:2px;box-shadow:none;cursor:pointer;transition:background .18s ease,opacity .18s ease}',
+    /* KuCAT 主题给所有 <button> 强加 width:auto!important / min-height:2.2rem!important /
+       text-transform:uppercase / hover translateY，会把 48×26 开关、16×16 图标按钮等精确
+       几何控件撑坏（宽塌、变竖条）；这里用 !important 固定几何并复位文本与位移。 */
+    '.cl-service-switch{position:relative;width:48px!important;height:26px!important;min-height:0!important;margin:0;padding:2px;border:0!important;border-radius:999px;background:rgba(128,128,128,.22);box-shadow:none!important;cursor:pointer;transition:background .18s ease,opacity .18s ease;text-transform:none;transform:none!important;line-height:1.4!important}',
     '.cl-service-switch .cl-service-knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.94);box-shadow:0 1px 4px rgba(0,0,0,.18);transition:transform .18s ease,background .18s ease}',
     '.cl-service-switch.is-on{background:rgba(74,160,101,.52)}',
     '.cl-service-switch.is-on .cl-service-knob{transform:translateX(22px)}',
@@ -244,7 +247,7 @@ function clKernelUnlock() {
 
 return view.extend({
   _busy:      false,
-  _op:        null,   /* 'start' | 'stop' | 'restart' | null */
+  _op:        null,   /* 'start' | 'stop' | 'restart' | 'reload' | null */
   _opTimers:  null,   /* array of setTimeout IDs for cleanup */
   _accessRefreshing: false,
   _coreSwitchBusy: false,
@@ -785,7 +788,29 @@ return view.extend({
           if (disabled) return;
           return running ? self._stop() : self._start();
         }
-      }, [E('span', { 'class': 'cl-service-knob' })])
+      }, [E('span', { 'class': 'cl-service-knob' })]),
+      E('button', {
+        type: 'button',
+        'class': 'btn cbi-button-action cl-btn-sm',
+        title: _("Restart Service"),
+        disabled: (disabled || !running) ? '' : null,
+        click: function (ev) {
+          ev.preventDefault();
+          if (disabled || !running) return;
+          return self._restart();
+        }
+      }, _("Restart")),
+      E('button', {
+        type: 'button',
+        'class': 'btn cbi-button-action cl-btn-sm',
+        title: _("Reload Service"),
+        disabled: (disabled || !running) ? '' : null,
+        click: function (ev) {
+          ev.preventDefault();
+          if (disabled || !running) return;
+          return self._reload();
+        }
+      }, _("Reload"))
     ]);
   },
 
@@ -1937,7 +1962,7 @@ return view.extend({
 
     // preflight: refuse start when no profile selected.
     // backend select_config also defends but toast is slow, UI would flash.
-    if (opKey === 'start' || opKey === 'restart') {
+    if (opKey === 'start' || opKey === 'restart' || opKey === 'reload') {
       var st0 = this._lastSt || {};
       var hasConfig = !!(st0.config || st0.conf_path);
       if (!hasConfig) {
@@ -1959,7 +1984,7 @@ return view.extend({
         btn.setAttribute('aria-pressed', newRunning ? 'true' : 'false');
         btn.className = 'cl-service-switch' + (newRunning ? ' is-on' : ' is-off');
       }
-      self._showOpMsg(opKey === 'stop' ? _("Stopping…") : _("Starting…"));
+      self._showOpMsg(opKey === 'stop' ? _("Stopping…") : opKey === 'reload' ? _("Reloading…") : _("Starting…"));
     }
 
     var maxWait = opKey === 'stop' ? 15000 : 35000;
@@ -1999,6 +2024,7 @@ return view.extend({
   _start:   function () { return this._svc(function () { return clashoo.start(); },   'start'); },
   _stop:    function () { return this._svc(function () { return clashoo.stop();  },   'stop'); },
   _restart: function () { return this._svc(function () { return clashoo.restart(); }, 'restart'); },
+  _reload:  function () { return this._svc(function () { return clashoo.reload(); },  'reload'); },
 
   _updSubs: function (ev) {
     var btn = ev && ev.target;

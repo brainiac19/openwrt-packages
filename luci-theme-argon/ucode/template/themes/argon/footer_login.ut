@@ -33,12 +33,6 @@
 	<script>
 		// thanks for Jo-Philipp Wich <jow@openwrt.org>
 		var luciLocation = {{ ctx.path }};
-  	const loginContainer = document.querySelector(
-  	  'div[class="login-container"][style*="backdrop-filter: blur(0px)"]'
-  	);
-  	if (loginContainer) {
-  	  loginContainer.style.margin = '0 auto';
-  	}
 	</script>
 </body>
 </html>

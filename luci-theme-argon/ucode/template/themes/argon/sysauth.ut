@@ -25,6 +25,7 @@
 {%
 	import * as fs from 'fs';
 	import { cursor } from 'uci';
+	import { get_branding } from 'luci.argon-branding';
 
 	let cfg = cursor();
 	// Only known layouts may select login page styles; old configs stay classic.
@@ -71,7 +72,7 @@
 		let mimeType = "";
 
 		if (fs.access("/etc/config/argon")) {
-			online_wallpaper = cfg.get_first('argon', 'global', 'online_wallpaper') ?? (cfg.get_first('argon', 'global', 'bing_background') == '1' ? 'bing' : null);
+			let online_wallpaper = cfg.get_first('argon', 'global', 'online_wallpaper') ?? (cfg.get_first('argon', 'global', 'bing_background') == '1' ? 'bing' : null);
 			if (online_wallpaper && online_wallpaper != "none") {
 				const picurl = ubus.call("luci.argon_wallpaper", "get_url") ?? {};
 				if (type(picurl?.url) == 'string' && match(picurl.url, /^https:\/\/[^[:space:]"'<>]+$/)) {
@@ -98,6 +99,8 @@
 	const hostname = striptags(boardinfo?.hostname ?? '?');
 	const themeDir = media + "/background/";
 	const bgArry = selectBackground(themeDir);
+	const branding = get_branding();
+	const logo_url = branding.logo ? media + '/branding/' + branding.logo : media + '/img/argon.svg';
 
 %}
 <!-- Login Page Start -->
@@ -151,7 +154,7 @@
 	<div class="login-container">
 		<div class="login-form">
 			<!-- Logo Start -->
-			<a class="brand" href="/"><img src="{{ media }}/img/argon.svg" class="icon">
+			<a class="brand" href="/"><img src="{{ logo_url }}" class="icon" alt="" data-fallback="{{ media }}/img/argon.svg" onerror="this.onerror=null;this.src=this.dataset.fallback">
 				<span class="brand-text">{{ hostname }}</span>
 			</a>
 			<!-- Logo End -->

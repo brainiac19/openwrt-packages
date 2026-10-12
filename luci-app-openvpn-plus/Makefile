@@ -4,13 +4,13 @@
 # This is free software, licensed under the Apache License, Version 2.0.
 # See /LICENSE for more information.
 #
-# luci-app-openvpn-plus : Makefile.standalone
+# luci-app-openvpn-plus : Makefile
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-openvpn-plus
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Manfred Jaider <info@masmbit.com>
 
@@ -22,7 +22,7 @@ define Package/luci-app-openvpn-plus
   SUBMENU:=3. Applications
   TITLE:=LuCI support for Ready-to-Use OpenVPN Setup (Plus Edition)
   URL:=https://github.com/masmbit/luci-app-openvpn-plus
-  DEPENDS:=+luci-base +openvpn-openssl +openssl-util +firewall4 +uclient-fetch
+  DEPENDS:=+luci-base +luci-lib-uqr +openvpn-openssl +openssl-util +firewall4 +uclient-fetch
   PKGARCH:=all
 endef
 
@@ -51,9 +51,6 @@ define Package/luci-app-openvpn-plus/install
 	$(INSTALL_DATA) ./root/etc/openvpn/luci/server.default.conf $(1)/etc/openvpn/luci/server.default.conf
 	$(INSTALL_DATA) ./root/etc/openvpn/luci/client.default.conf $(1)/etc/openvpn/luci/client.default.conf
 	$(INSTALL_DATA) ./root/etc/openvpn/luci/default.nft $(1)/etc/openvpn/luci/default.nft
-
-	$(INSTALL_DIR) $(1)/etc/uci-defaults
-	$(INSTALL_DATA) ./root/etc/uci-defaults/35_luci-app-openvpn-plus $(1)/etc/uci-defaults/35_luci-app-openvpn-plus
 
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./root/usr/libexec/luci-app-openvpn-plus $(1)/usr/libexec/luci-app-openvpn-plus

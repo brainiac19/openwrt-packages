@@ -10,6 +10,7 @@
 'require vantage.model as model';
 'require vantage.insight as insight';
 'require vantage.series as series';
+'require vantage.layout as layout';
 
 /* Vantage dashboard (luci-app-vantage): a live, read-only overview of the
    device, its uplink, radios, SSIDs and stations. The only write is the
@@ -49,10 +50,13 @@ function hostapd(ifname, method) {
 	return L.resolveDefault(hostapdCalls[key](), null);
 }
 
+/* revalidated on every load (a 304 when unchanged): LuCI versions its own
+   scripts, not this sheet, so after an upgrade a browser could pair the
+   new view with a cached app.css */
 var cssPromise = null;
 function loadCss() {
 	if (cssPromise) return cssPromise;
-	cssPromise = fetch(L.resource('vantage/app.css')).then(function(r) { return r.ok ? r.text() : ''; }).then(function(text) {
+	cssPromise = fetch(L.resource('vantage/app.css'), { cache: 'no-cache' }).then(function(r) { return r.ok ? r.text() : ''; }).then(function(text) {
 		if (!text || !('adoptedStyleSheets' in document) || typeof CSSStyleSheet !== 'function') return;
 		var sheet = new CSSStyleSheet();
 		sheet.replaceSync(text);
@@ -104,7 +108,13 @@ var ICONS = {
 	watch: [ 'M8.5 6h7A1.5 1.5 0 0 1 17 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 16.5v-9A1.5 1.5 0 0 1 8.5 6Z', 'M9 6l.5-3h5l.5 3M9 18l.5 3h5l.5-3' ],
 	iot: [ 'M9 18h6', 'M10 21h4', 'M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z' ],
 	router: [ 'M4.5 13h15a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z', 'M7 16h.01M10 16h.01', 'M8 13 6 6.5M16 13l2-6.5' ],
-	device: [ 'M7 3.5h10A1.5 1.5 0 0 1 18.5 5v14a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5Z', 'M10 17.5h4', 'M9 7.5h6' ]
+	device: [ 'M7 3.5h10A1.5 1.5 0 0 1 18.5 5v14a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5Z', 'M10 17.5h4', 'M9 7.5h6' ],
+	layout: [ 'M4.5 4.5h6v7h-6zM13.5 4.5h6v4h-6zM13.5 11.5h6v8h-6zM4.5 14.5h6v5h-6z' ],
+	grip: [ 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01' ],
+	left: [ 'M14.5 6l-6 6 6 6' ],
+	plus: [ 'M12 5.5v13M5.5 12h13' ],
+	minus: [ 'M5.5 12h13' ],
+	hide: [ 'M3.5 12s3-6 8.5-6 8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z', 'M12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5Z', 'M4.5 19.5l15-15' ]
 };
 
 function svgRoot(cls, viewBox) {
@@ -150,16 +160,19 @@ function signalGlyph(sig) {
 }
 
 /* vertical fade for area fills: the series colour (--vt-sc) at the
-   chart fill opacity at the top, transparent at the baseline. Returns the
-   paint reference for the fill attribute. */
+   chart fill opacity at the top, transparent at the baseline (flip: an
+   area hanging down from its baseline). cls goes on the gradient, which
+   takes --vt-sc from where it sits, not from the area using it. Returns
+   the paint reference for the fill attribute. */
 var gradSeq = 0;
-function fadeFill(svg) {
+function fadeFill(svg, flip, cls) {
 	var id = 'vt-fade-' + (++gradSeq);
 	var defs = document.createElementNS(SVGNS, 'defs');
 	var lg = document.createElementNS(SVGNS, 'linearGradient');
 	lg.setAttribute('id', id);
-	lg.setAttribute('x1', '0'); lg.setAttribute('y1', '0');
-	lg.setAttribute('x2', '0'); lg.setAttribute('y2', '1');
+	if (cls) lg.setAttribute('class', cls);
+	lg.setAttribute('x1', '0'); lg.setAttribute('y1', flip ? '1' : '0');
+	lg.setAttribute('x2', '0'); lg.setAttribute('y2', flip ? '0' : '1');
 	[ [ '0', 'vt-fade-top' ], [ '1', 'vt-fade-end' ] ].forEach(function(st) {
 		var stop = document.createElementNS(SVGNS, 'stop');
 		stop.setAttribute('offset', st[0]);
@@ -170,6 +183,11 @@ function fadeFill(svg) {
 	svg.appendChild(defs);
 	return 'url(#' + id + ')';
 }
+
+/* throughput direction: the same colour in every row, the legend, the
+   readouts and the tooltip ('dn' download, 'up' upload) */
+function dirKey(dir) { return E('span', { 'class': 'vt-lg-key vt-k-' + dir }); }
+function dirArrow(dir) { return E('span', { 'class': 'vt-arr vt-arr-' + dir }, [ dir === 'up' ? '↑' : '↓' ]); }
 
 function pos(el, xPct, yPct) {
 	el.style.left = Math.max(0, Math.min(100, xPct)).toFixed(2) + '%';
@@ -265,6 +283,14 @@ function kv(label, value, mono) {
 	]);
 }
 
+/* one of the four numbers under the network path */
+function kpi(label, value, sub, tone, onclick) {
+	var body = [ E('span', { 'class': 'vt-kpi-label' }, [ label ]), E('span', { 'class': 'vt-kpi-value vt-tn' }, [ value ]), E('span', { 'class': 'vt-kpi-sub' }, [ sub ]) ];
+	return onclick
+		? E('button', { 'type': 'button', 'class': 'vt-kpi vt-kpi-' + (tone || 'plain'), 'click': onclick }, body)
+		: E('div', { 'class': 'vt-kpi vt-kpi-' + (tone || 'plain') }, body);
+}
+
 function tileHead(ic, title, extra) {
 	return E('header', { 'class': 'vt-tile-head' }, [
 		E('h3', { 'class': 'vt-tile-title' }, [ icon(ic), E('span', {}, [ title ]) ]),
@@ -320,6 +346,26 @@ function writeFolds(v) {
 	try { window.localStorage.setItem(FOLD_KEY, JSON.stringify(v)); } catch (e) {}
 }
 
+/* Tile layouts the viewer arranged, per screen class, in this browser;
+   vantage.layout validates whatever comes back */
+var LAYOUT_KEY = 'vantage.layout.v1';
+
+function readLayouts() {
+	var v = null;
+	try { v = JSON.parse(window.localStorage.getItem(LAYOUT_KEY) || 'null'); } catch (e) { v = null; }
+	var out = Object.create(null);
+	if (v && typeof v === 'object' && !Array.isArray(v))
+		Object.keys(v).forEach(function(k) { if (/^(wide|mid|narrow)(-wired)?$/.test(k) && Array.isArray(v[k])) out[k] = v[k]; });
+	return out;
+}
+
+function writeLayouts(v) {
+	try {
+		if (Object.keys(v).length) window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(v));
+		else window.localStorage.removeItem(LAYOUT_KEY);
+	} catch (e) {}
+}
+
 /* ================================================================= view */
 
 return view.extend({
@@ -361,12 +407,13 @@ return view.extend({
 			L.resolveDefault(callRead('/proc/stat'), ''),
 			L.resolveDefault(callIfDump(), []),
 			L.resolveDefault(callDevs(), {}),
-			L.resolveDefault(callWifi(), {}),
+			/* null when the call fails: no answer is not "no radios" */
+			L.resolveDefault(callWifi(), null),
 			L.resolveDefault(callHints(), {})
 		]).then(function(r) {
-			var wifiDevs = (r[4] && typeof r[4] === 'object') ? r[4] : {};
+			var wifiDevs = (r[4] && typeof r[4] === 'object') ? r[4] : null;
 			var ifnames = [];
-			Object.keys(wifiDevs).forEach(function(rn) {
+			Object.keys(wifiDevs || {}).forEach(function(rn) {
 				var ifs = (wifiDevs[rn] && Array.isArray(wifiDevs[rn].interfaces)) ? wifiDevs[rn].interfaces : [];
 				ifs.forEach(function(i) {
 					if (i && typeof i.ifname === 'string' && HOSTAPD_OBJ.test(i.ifname) && ifnames.indexOf(i.ifname) < 0) ifnames.push(i.ifname);
@@ -423,12 +470,16 @@ return view.extend({
 			rdns: Object.create(null), rdnsBusy: false, rdnsOff: !data.canRdns,
 			mdns: Object.create(null), mdnsOff: true, mdnsAt: 0,
 			oui: null, ouiLoading: false,
+			wireless: null,
 			lastOk: 0, lastErr: null, paused: false
 		};
-		this.ui = { sort: 'live', dir: -1, filter: '', chip: 'all', chart: 'down', drawer: null, editing: null, hover: null };
+		this.ui = { sort: 'live', dir: -1, filter: '', chip: 'all', drawer: null, editing: null, hover: null };
 		this.folds = readFolds();
 		this.foldEls = {};
 		this.foldBtns = {};
+		this.layouts = readLayouts();
+		this.editing = false;
+		this.drag = null;
 		this.applyMdns(data.mdns);
 		this.aliases = this.aliases || {};
 	},
@@ -461,6 +512,7 @@ return view.extend({
 			aliases: this.aliases, rdns: st.rdns, mdns: st.mdns,
 			vendor: st.oui ? function(k) { return k ? st.oui.lookup(k) : null; } : null
 		});
+		this.markWired(m, raw);
 		if (m.device.memory) series.push(st.hist.mem, [ at, m.device.memory.usedPct ], WINDOW_MS, HIST_MAX);
 
 		/* interface counters */
@@ -530,6 +582,18 @@ return view.extend({
 		return m;
 	},
 
+	/* Wired-only: the wireless status answered and lists no radios. A
+	   failed call proves nothing, and radios seen once keep the Wi-Fi
+	   layout for the session, so one bad poll cannot reshuffle the page. */
+	markWired: function(m, raw) {
+		var st = this.st;
+		if (raw && raw.wifi) {
+			if (m.radios.length) st.wireless = true;
+			else if (st.wireless !== true) st.wireless = false;
+		}
+		m.wired = st.wireless === false;
+	},
+
 	/* The generation shown is the best standard a station used this
 	   session: single frames (management, retries) go out at legacy
 	   rates and would make the badge flicker. */
@@ -592,6 +656,7 @@ return view.extend({
 			aliases: this.aliases, rdns: st.rdns, mdns: st.mdns,
 			vendor: st.oui ? function(k) { return k ? st.oui.lookup(k) : null; } : null
 		});
+		this.markWired(m, null);
 		this.stickyGen(m);
 		m.clients.forEach(function(c) { c.exp = insight.experience(c); c.firstSeen = st.presence && st.presence.firstSeen[c.mac]; c.isNew = !!st.isNew[c.mac]; });
 		st.talkers = insight.topTalkers(m.clients, st.staRates, 5);
@@ -631,14 +696,8 @@ return view.extend({
 			E('div', { 'class': 'vt-body' }, [
 				this.buildHead(),
 				this.el.health = E('div', { 'class': 'vt-health', 'role': 'list', 'aria-label': _('Health checks') }),
-				E('div', { 'class': 'vt-grid' }, [
-					this.buildHero(),
-					this.buildSystem(),
-					this.buildChart(),
-					this.buildRadios(),
-					this.buildClients(),
-					E('div', { 'class': 'vt-side' }, [ this.buildTalkers(), this.buildSsids() ])
-				])
+				this.buildEditBar(),
+				this.el.grid = E('div', { 'class': 'vt-grid vt-grid-wait' }, this.buildTiles())
 			]),
 			this.buildDrawer()
 		]);
@@ -654,12 +713,19 @@ return view.extend({
 		document.addEventListener('keydown', L.bind(this.handleKey, this));
 		window.setInterval(function() { self.paintLive(); }, 1000);
 		if (window.ResizeObserver) new ResizeObserver(function() { self.scheduleWires(); }).observe(this.el.path);
+		if (window.ResizeObserver) {
+			var ro = new ResizeObserver(function() { self.scheduleLayout(); });
+			ro.observe(this.el.grid);
+			layout.TILES.forEach(function(id) { ro.observe(self.tiles[id]); });
+		}
+		window.addEventListener('resize', function() { self.scheduleLayout(); });
 		window.addEventListener('hashchange', function() { self.openFromHash(); });
 		window.requestAnimationFrame(function() { self.drawWires(); self.openFromHash(); });
 		return root;
 	},
 
 	paint: function() {
+		this.el.root.classList.toggle('vt-wired', !!this.m.wired);
 		this.paintHead();
 		this.paintHealth();
 		this.paintHero();
@@ -672,6 +738,7 @@ return view.extend({
 		this.paintDrawer();
 		this.paintLive();
 		this.scheduleWires();
+		this.scheduleLayout();
 	},
 
 	/* ------------------------------------------------------------ folds */
@@ -701,8 +768,336 @@ return view.extend({
 		this.folds[key] = !this.folds[key];
 		writeFolds(this.folds);
 		this.applyFold(key);
+		if (this.held) delete this.held[key];
 		if (key === 'hero') this.scheduleWires();
 		if (key === 'chart') this.paintChart();
+	},
+
+	/* ----------------------------------------------------------- layout */
+
+	/* the tiles in a fixed set; vantage.layout decides order and size */
+	buildTiles: function() {
+		var self = this;
+		this.tiles = {
+			hero: this.buildHero(), chart: this.buildChart(), radios: this.buildRadios(), clients: this.buildClients(),
+			sys: this.buildSystem(), talk: this.buildTalkers(), ssids: this.buildSsids()
+		};
+		this.tileNames = {
+			hero: _('Network path'), chart: _('Throughput'), radios: _('Radios'), clients: _('Clients'),
+			sys: _('System'), talk: _('Top talkers'), ssids: _('Wireless networks')
+		};
+		this.ov = {};
+		this.el.ghost = E('div', { 'class': 'vt-drop-ghost', 'aria-hidden': 'true' });
+		return [ this.el.ghost ].concat(layout.TILES.map(function(id) {
+			var t = self.tiles[id];
+			t.classList.add('vt-cell');
+			t.appendChild(self.buildOverlay(id));
+			return t;
+		}));
+	},
+
+	/* the stored layout for this screen class, or the default */
+	layoutFor: function(tier, wired) {
+		var k = layout.key(tier, wired);
+		return layout.normalize(this.layouts[k] || null, tier, wired);
+	},
+
+	scheduleLayout: function() {
+		if (this.layoutRaf || !this.el || !this.el.grid) return;
+		var self = this;
+		this.layoutRaf = window.requestAnimationFrame(function() { self.layoutRaf = null; self.doLayout(); });
+	},
+
+	/* measure the shown tiles at their widths, pack them, place them;
+	   widths and columns come from CSS (--c, --w, --cols), only the
+	   vertical positions from here */
+	doLayout: function() {
+		var self = this, grid = this.el.grid, tiles = this.tiles;
+		var width = grid.clientWidth;
+		if (!width || !this.m) return;
+		var tier = layout.tier(width), cols = layout.cols(tier), wired = !!this.m.wired;
+		var list = this.drag ? this.drag.list : this.layoutFor(tier, wired);
+		var gap = parseFloat(window.getComputedStyle(grid).getPropertyValue('--vt-gap')) || 14;
+		var shown = list.filter(function(e) { return !e.hide; });
+		var on = Object.create(null);
+		shown.forEach(function(e) { on[e.id] = true; });
+
+		/* keep what the viewer is reading in place when tiles above change */
+		var sc = document.scrollingElement || document.documentElement, anchor = null, before = 0;
+		if (sc.scrollTop > 0 && !this.drag) {
+			for (var i = 0; i < shown.length && !anchor; i++) {
+				var r0 = tiles[shown[i].id].getBoundingClientRect();
+				if (r0.height && r0.bottom > 0) { anchor = tiles[shown[i].id]; before = r0.top; }
+			}
+		}
+
+		grid.style.setProperty('--cols', cols.toFixed(0));
+		layout.TILES.forEach(function(id) { tiles[id].classList.toggle('vt-cell-off', !on[id]); });
+		shown.forEach(function(e) {
+			var t = tiles[e.id];
+			t.style.setProperty('--c', Math.min(e.c, cols - 1).toFixed(0));
+			t.style.setProperty('--w', Math.min(e.w, cols).toFixed(0));
+			t.style.minHeight = '';
+		});
+		/* live content changes hold a tile's height for a while; a new
+		   width or an edit shows true sizes at once */
+		if (this.heldWidth !== width || this.drag) { this.held = Object.create(null); this.heldWidth = width; }
+		var held = this.held, now = Date.now();
+		var items = shown.map(function(e) {
+			var nat = tiles[e.id].getBoundingClientRect().height;
+			held[e.id] = layout.settle(held[e.id], nat, now);
+			return { id: e.id, c: e.c, w: e.w, h: held[e.id].h, nat: nat };
+		});
+		var p = layout.pack(items, cols, gap);
+		items.forEach(function(it) {
+			var r = p.rects[it.id], t = tiles[it.id];
+			if (r.h > it.nat + 0.5) t.style.minHeight = r.h.toFixed(1) + 'px';
+			t.style.setProperty('--y', r.top.toFixed(1) + 'px');
+		});
+		grid.style.height = p.height.toFixed(1) + 'px';
+		var g = this.drag && p.rects[this.drag.id], ghost = this.el.ghost;
+		ghost.classList.toggle('vt-on', !!g);
+		if (g) {
+			ghost.style.setProperty('--c', g.c.toFixed(0));
+			ghost.style.setProperty('--w', g.w.toFixed(0));
+			ghost.style.setProperty('--y', g.top.toFixed(1) + 'px');
+			ghost.style.height = g.h.toFixed(1) + 'px';
+		}
+		this.lay = { tier: tier, cols: cols, wired: wired, list: list, rects: p.rects, gap: gap, width: width };
+
+		/* reading and tab order follow the layout; not while dragging,
+		   moving the dragged tile would end the drag */
+		if (!this.drag) {
+			var want = shown.map(function(e) { return tiles[e.id]; });
+			var have = Array.prototype.filter.call(grid.children, function(c) { return c.classList.contains('vt-cell') && !c.classList.contains('vt-cell-off'); });
+			if (want.some(function(t, k) { return have[k] !== t; })) {
+				var focus = document.activeElement;
+				want.forEach(function(t) { grid.appendChild(t); });
+				if (focus && focus !== document.activeElement && grid.contains(focus)) focus.focus();
+			}
+		}
+		if (anchor) {
+			var d = anchor.getBoundingClientRect().top - before;
+			if (Math.abs(d) > 0.5) sc.scrollTop += d;
+		}
+		grid.classList.remove('vt-grid-wait');
+		if (this.editing) this.paintEdit();
+	},
+
+	setLayout: function(list) {
+		var l = this.lay;
+		if (!l) return;
+		var k = layout.key(l.tier, l.wired);
+		if (layout.same(list, layout.defaults(l.tier, l.wired))) delete this.layouts[k];
+		else this.layouts[k] = layout.compact(list);
+		writeLayouts(this.layouts);
+		this.held = Object.create(null);
+		this.doLayout();
+	},
+
+	editTile: function(id, fn, say) {
+		var l = this.lay;
+		if (!l) return;
+		var next = fn(l.list);
+		if (layout.same(next, l.list)) return;
+		this.setLayout(next);
+		if (say) this.announce(say);
+	},
+
+	announce: function(text) {
+		var s = this.el.editSay;
+		dom.content(s, []);
+		window.setTimeout(function() { txt(s, text); }, 30);
+	},
+
+	setEditing: function(on) {
+		this.editing = !!on;
+		this.el.root.classList.toggle('vt-editing', this.editing);
+		this.el.layoutBtn.setAttribute('aria-pressed', String(this.editing));
+		this.el.editBar.hidden = !this.editing;
+		if (this.editing) {
+			this.doLayout();
+			this.el.editDone.focus();
+		}
+		else this.el.layoutBtn.focus();
+	},
+
+	buildEditBar: function() {
+		var self = this, el = this.el;
+		el.editHint = E('span', { 'class': 'vt-hint' });
+		el.editHidden = E('div', { 'class': 'vt-edit-hidden' });
+		el.editSay = E('span', { 'class': 'vt-sr', 'role': 'status', 'aria-live': 'polite' });
+		el.editBar = E('div', { 'class': 'vt-editbar', 'role': 'region', 'aria-label': _('Arrange the dashboard'), 'hidden': 'hidden' }, [
+			E('div', { 'class': 'vt-editbar-text' }, [ E('strong', {}, [ _('Arrange the dashboard') ]), el.editHint ]),
+			el.editHidden,
+			E('div', { 'class': 'vt-editbar-actions' }, [
+				E('button', { 'type': 'button', 'class': 'vt-btn', 'click': function() {
+					var l = self.lay;
+					if (!l) return;
+					delete self.layouts[layout.key(l.tier, l.wired)];
+					writeLayouts(self.layouts);
+					self.held = Object.create(null);
+					self.doLayout();
+					self.announce(_('Layout reset'));
+				} }, [ _('Reset') ]),
+				el.editDone = E('button', { 'type': 'button', 'class': 'vt-btn vt-btn-primary', 'click': function() { self.setEditing(false); } }, [ _('Done') ])
+			]),
+			el.editSay
+		]);
+		return el.editBar;
+	},
+
+	/* the controls laid over a tile while arranging */
+	buildOverlay: function(id) {
+		var self = this, name = this.tileNames[id], o = {};
+		function btn(cls, ic, label, fn) {
+			return E('button', { 'type': 'button', 'class': 'vt-ov-btn ' + cls, 'aria-label': label, 'title': label, 'click': fn }, [ icon(ic) ]);
+		}
+		o.grip = E('button', { 'type': 'button', 'class': 'vt-ov-grip', 'aria-label': _('Move %s: drag, or use the arrow keys').format(name), 'title': _('Drag to move') }, [ icon('grip') ]);
+		o.grip.addEventListener('pointerdown', function(ev) { self.dragStart(id, ev); });
+		o.grip.addEventListener('keydown', function(ev) {
+			var k = ev.key, act = k === 'ArrowLeft' ? o.left : k === 'ArrowRight' ? o.right : k === 'ArrowUp' ? o.up : k === 'ArrowDown' ? o.down : null;
+			if (!act) return;
+			ev.preventDefault();
+			if (!act.disabled) act.click();
+		});
+		o.left = btn('vt-ov-col', 'left', _('Move %s left').format(name), function() {
+			self.editTile(id, function(l) { return layout.shift(l, id, -1, self.lay.tier); }, _('%s moved left').format(name));
+		});
+		o.right = btn('vt-ov-col vt-ov-flip', 'left', _('Move %s right').format(name), function() {
+			self.editTile(id, function(l) { return layout.shift(l, id, 1, self.lay.tier); }, _('%s moved right').format(name));
+		});
+		o.up = btn('', 'up', _('Move %s up').format(name), function() {
+			self.editTile(id, function(l) { return layout.move(l, id, -1); }, _('%s moved up').format(name));
+		});
+		o.down = btn('', 'down', _('Move %s down').format(name), function() {
+			self.editTile(id, function(l) { return layout.move(l, id, 1); }, _('%s moved down').format(name));
+		});
+		o.narrow = btn('vt-ov-col', 'minus', _('Make %s narrower').format(name), function() {
+			self.editTile(id, function(l) { return layout.resize(l, id, -1, self.lay.tier); }, _('%s is narrower').format(name));
+		});
+		o.wide = btn('vt-ov-col', 'plus', _('Make %s wider').format(name), function() {
+			self.editTile(id, function(l) { return layout.resize(l, id, 1, self.lay.tier); }, _('%s is wider').format(name));
+		});
+		o.size = E('span', { 'class': 'vt-ov-size vt-ov-col vt-tn' });
+		o.hide = btn('vt-ov-hide', 'hide', _('Hide %s').format(name), function() {
+			self.editTile(id, function(l) { return layout.setHidden(l, id, true); }, _('%s hidden').format(name));
+			self.el.editDone.focus();
+		});
+		o.root = E('div', { 'class': 'vt-ov vt-fold-keep', 'role': 'group', 'aria-label': name }, [
+			E('div', { 'class': 'vt-ov-bar' }, [
+				o.grip,
+				E('span', { 'class': 'vt-ov-name' }, [ name ]),
+				E('span', { 'class': 'vt-ov-btns' }, [ o.up, o.down, o.left, o.right, o.narrow, o.size, o.wide, o.hide ])
+			])
+		]);
+		this.ov[id] = o;
+		return o.root;
+	},
+
+	/* button states, sizes and the hidden-tile list for the current layout */
+	paintEdit: function() {
+		var self = this, l = this.lay;
+		if (!l) return;
+		var shown = l.list.filter(function(e) { return !e.hide; });
+		txt(this.el.editHint, l.tier === 'wide' ? _('Drag a tile by its handle or use its buttons. Saved in this browser for wide screens.')
+			: l.tier === 'mid' ? _('Drag a tile by its handle or use its buttons. Saved in this browser for medium screens.')
+			: _('Drag a tile by its handle or use its buttons. Saved in this browser for narrow screens.'));
+		this.el.root.classList.toggle('vt-edit-1col', l.cols === 1);
+		shown.forEach(function(e, i) {
+			var o = self.ov[e.id];
+			o.up.disabled = i === 0;
+			o.down.disabled = i === shown.length - 1;
+			o.left.disabled = e.c <= 0;
+			o.right.disabled = e.c + e.w >= l.cols;
+			o.narrow.disabled = e.w <= layout.minW(e.id, l.tier);
+			o.wide.disabled = e.w >= l.cols;
+			o.hide.disabled = shown.length <= 1;
+			txt(o.size, e.w + '/' + l.cols);
+			o.size.setAttribute('title', _('%d of %d columns').format(e.w, l.cols));
+		});
+		var hidden = l.list.filter(function(e) { return e.hide; });
+		dom.content(this.el.editHidden, hidden.length ? [ E('span', { 'class': 'vt-label' }, [ _('Hidden') ]) ].concat(hidden.map(function(e) {
+			var name = self.tileNames[e.id];
+			return E('button', { 'type': 'button', 'class': 'vt-fchip', 'title': _('Show %s').format(name), 'click': function() {
+				self.editTile(e.id, function(list) { return layout.setHidden(list, e.id, false); }, _('%s shown').format(name));
+			} }, [ icon('plus'), E('span', {}, [ name ]) ]);
+		})) : []);
+	},
+
+	/* dragging by the handle: the tile follows the pointer, the others
+	   make room where it would land */
+	dragStart: function(id, ev) {
+		if (ev.button !== 0 || !this.lay || this.drag) return;
+		ev.preventDefault();
+		var self = this, t = this.tiles[id], grip = this.ov[id].grip, tr = t.getBoundingClientRect();
+		try { grip.setPointerCapture(ev.pointerId); } catch (e) {}
+		this.drag = { id: id, list: layout.copy(this.lay.list), start: layout.copy(this.lay.list), gx: ev.clientX - tr.left, gy: ev.clientY - tr.top, x: ev.clientX, y: ev.clientY, raf: null };
+		t.classList.add('vt-dragging');
+		this.el.root.classList.add('vt-drag-on');
+		function move(e) { self.drag.x = e.clientX; self.drag.y = e.clientY; self.dragMove(); }
+		function end(e) {
+			grip.removeEventListener('pointermove', move);
+			grip.removeEventListener('pointerup', end);
+			grip.removeEventListener('pointercancel', end);
+			self.dragEnd(e.type === 'pointercancel');
+		}
+		grip.addEventListener('pointermove', move);
+		grip.addEventListener('pointerup', end);
+		grip.addEventListener('pointercancel', end);
+		this.dragMove();
+		this.dragScroll();
+	},
+
+	dragMove: function() {
+		var d = this.drag, l = this.lay;
+		if (!d || !l) return;
+		var t = this.tiles[d.id], gr = this.el.grid.getBoundingClientRect();
+		var x = d.x - gr.left - d.gx, y = d.y - gr.top - d.gy;
+		t.style.left = x.toFixed(1) + 'px';
+		t.style.top = y.toFixed(1) + 'px';
+
+		var step = (l.width + l.gap) / l.cols, me = d.list[layout.indexOf(d.list, d.id)];
+		var c = Math.max(0, Math.min(l.cols - me.w, Math.round(x / step)));
+		var px = d.x - gr.left, py = d.y - gr.top, target = null, after = false;
+		d.list.forEach(function(e) {
+			var r = l.rects[e.id];
+			if (e.hide || e.id === d.id || !r) return;
+			var rx = r.c * step, rw = r.w * step - l.gap;
+			if (px >= rx && px <= rx + rw && py >= r.top && py <= r.top + r.h) {
+				target = e.id;
+				after = py > r.top + r.h / 2;
+			}
+		});
+		var next = layout.drop(d.list, d.id, c, target, after, l.tier);
+		if (!layout.same(next, d.list)) { d.list = next; this.doLayout(); }
+	},
+
+	/* scroll while the pointer rests near the top or bottom edge */
+	dragScroll: function() {
+		var self = this, d = this.drag;
+		if (!d) return;
+		var edge = 64, v = d.y < edge ? -(edge - d.y) / 4 : d.y > window.innerHeight - edge ? (d.y - window.innerHeight + edge) / 4 : 0;
+		if (v) { window.scrollBy(0, Math.round(v)); this.dragMove(); }
+		d.raf = window.requestAnimationFrame(function() { self.dragScroll(); });
+	},
+
+	dragEnd: function(cancel) {
+		var d = this.drag;
+		if (!d) return;
+		if (d.raf) window.cancelAnimationFrame(d.raf);
+		var t = this.tiles[d.id];
+		t.classList.remove('vt-dragging');
+		this.el.root.classList.remove('vt-drag-on');
+		t.style.left = '';
+		t.style.top = '';
+		var list = cancel ? d.start : d.list;
+		this.drag = null;
+		if (!layout.same(list, d.start)) {
+			this.setLayout(list);
+			this.announce(_('%s moved').format(this.tileNames[d.id]));
+		}
+		else this.doLayout();
 	},
 
 	/* ------------------------------------------------------------- head */
@@ -718,6 +1113,10 @@ return view.extend({
 			el.live = E('div', { 'class': 'vt-livepill', 'role': 'status', 'aria-live': 'off' }, [
 				E('span', { 'class': 'vt-live-beat' }),
 				el.liveText = E('span', { 'class': 'vt-live-text' })
+			]),
+			el.layoutBtn = E('button', { 'type': 'button', 'class': 'vt-btn vt-btn-ghost vt-layout-btn', 'aria-pressed': 'false',
+				'title': _('Arrange the dashboard'), 'click': L.bind(function() { this.setEditing(!this.editing); }, this) }, [
+				icon('layout'), E('span', {}, [ _('Layout') ])
 			])
 		]);
 	},
@@ -728,7 +1127,7 @@ return view.extend({
 		txt(this.el.headline, s.headline);
 		var clients = this.m.clients.length;
 		txt(this.el.subline, [ d.model, d.hostname, d.firmware ? d.firmware.replace(/\s+r\d+-[0-9a-f]+$/, '') : null,
-			clients === 1 ? _('1 client') : _('%d clients').format(clients) ].filter(Boolean).join('  ·  '));
+			this.m.wired ? null : clients === 1 ? _('1 client') : _('%d clients').format(clients) ].filter(Boolean).join('  ·  '));
 	},
 
 	paintLive: function() {
@@ -809,7 +1208,7 @@ return view.extend({
 		var ap = E('button', { 'type': 'button', 'class': 'vt-node vt-node-ap', 'click': function() { self.openDrawer('device', 'device'); } }, [
 			E('span', { 'class': 'vt-node-ico' }, [ icon('ap') ]),
 			E('span', { 'class': 'vt-node-body' }, [
-				E('span', { 'class': 'vt-node-kicker' }, [ _('This access point') ]),
+				E('span', { 'class': 'vt-node-kicker' }, [ m.wired ? _('This device') : _('This access point') ]),
 				E('span', { 'class': 'vt-node-title' }, [ d.model ]),
 				E('span', { 'class': 'vt-node-sub vt-mono' }, [ up && up.ipv4[0] ? up.ipv4[0].split('/')[0] : fmt.DASH ]),
 				E('span', { 'class': 'vt-node-sub' }, [ d.uptime != null ? _('up %s').format(fmt.duration(d.uptime)) : '' ])
@@ -850,7 +1249,8 @@ return view.extend({
 			self.nodes.radios.push({ el: rnode, ssids: ssNodes, active: !!(rr && rr.rx + rr.tx > 50e3), rate: rr ? rr.rx + rr.tx : 0 });
 			branches.appendChild(E('div', { 'class': 'vt-branch' }, [ rnode, ssidCol ]));
 		});
-		if (!m.radios.length) branches.appendChild(E('div', { 'class': 'vt-empty-inline' }, [ _('No radios reported') ]));
+		if (m.wired) this.netBranches(branches);
+		else if (!m.radios.length) branches.appendChild(E('div', { 'class': 'vt-empty-inline' }, [ _('No radios reported') ]));
 
 		this.nodes.upActive = !!(up_r && up_r.rx + up_r.tx > 50e3);
 		this.nodes.upRate = up_r ? up_r.rx + up_r.tx : 0;
@@ -861,10 +1261,33 @@ return view.extend({
 		this.paintKpis();
 	},
 
+	/* wired-only: the device's other networks take the radios' place,
+	   wired into the path the same way (nodes.radios) */
+	netBranches: function(branches) {
+		var st = this.st, self = this;
+		var nets = this.m.networks.filter(function(n) { return n.up; }).slice(0, 8);
+		nets.forEach(function(n) {
+			var r = n.dev ? st.devRates[n.dev] : null;
+			var node = E('a', { 'class': 'vt-node vt-node-radio vt-node-net', 'href': L.url.apply(L, insight.PAGES.network),
+				'title': [ n.name, n.dev, n.ipv4 ].filter(Boolean).join(' · ') }, [
+				E('span', { 'class': 'vt-node-body' }, [
+					E('span', { 'class': 'vt-node-kicker' }, [ n.proto || _('Interface') ]),
+					E('span', { 'class': 'vt-node-title' }, [ n.name ]),
+					E('span', { 'class': 'vt-node-sub vt-mono' }, [ n.ipv4 ? n.ipv4.split('/')[0] : (n.dev || fmt.DASH) ]),
+					E('span', { 'class': 'vt-node-sub vt-tn' }, [ r ? '↓ ' + fmt.bitsShort(r.tx) + '  ↑ ' + fmt.bitsShort(r.rx) : fmt.DASH ])
+				])
+			]);
+			self.nodes.radios.push({ el: node, ssids: [], active: !!(r && r.rx + r.tx > 50e3), rate: r ? r.rx + r.tx : 0 });
+			branches.appendChild(E('div', { 'class': 'vt-branch' }, [ node ]));
+		});
+		if (!nets.length) branches.appendChild(E('div', { 'class': 'vt-empty-inline' }, [ _('No other interfaces are up') ]));
+	},
+
 	/* four numbers under the path: who is here, what flows, where, and
 	   who is worst off */
 	paintKpis: function() {
 		var self = this, m = this.m, st = this.st, up = st.uplinkRate;
+		if (m.wired) return this.paintNetKpis();
 		var byBand = {};
 		m.clients.forEach(function(c) { byBand[c.band] = (byBand[c.band] || 0) + 1; });
 		var bandText = Object.keys(byBand).sort().map(function(b) { return _('%d on %s').format(byBand[b], wifi.bandLabel(b)); }).join(' · ');
@@ -872,12 +1295,6 @@ return view.extend({
 		m.radios.forEach(function(r) { var i = st.radioInsights[r.id]; if (i && i.busiest) busiest = { r: r, share: i.share }; });
 		var weakest = m.clients.filter(function(c) { return c.signal != null; }).sort(function(a, b) { return a.signal - b.signal; })[0];
 
-		function kpi(label, value, sub, tone, onclick) {
-			var body = [ E('span', { 'class': 'vt-kpi-label' }, [ label ]), E('span', { 'class': 'vt-kpi-value vt-tn' }, [ value ]), E('span', { 'class': 'vt-kpi-sub' }, [ sub ]) ];
-			return onclick
-				? E('button', { 'type': 'button', 'class': 'vt-kpi vt-kpi-' + (tone || 'plain'), 'click': onclick }, body)
-				: E('div', { 'class': 'vt-kpi vt-kpi-' + (tone || 'plain') }, body);
-		}
 		dom.content(this.el.kpis, [
 			kpi(_('Clients'), String(m.clients.length), bandText || _('none connected'), 'plain', function() { self.el.clients.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }); }),
 			kpi(_('Traffic now'), up ? '↓ ' + fmt.bits(up.rx) : fmt.DASH, up ? _('↑ %s · via %s').format(fmt.bits(up.tx), m.uplink ? m.uplink.dev : '') : _('measuring'), 'plain', function() { self.openDrawer('uplink', 'uplink'); }),
@@ -885,6 +1302,26 @@ return view.extend({
 				: kpi(_('Busiest radio'), fmt.DASH, _('no Wi-Fi traffic yet'), 'plain'),
 			weakest ? kpi(_('Weakest signal'), fmt.dbm(weakest.signal), weakest.name, weakest.signal < insight.WEAK_DBM ? 'warn' : 'plain', function() { self.openDrawer('client', weakest.mac); })
 				: kpi(_('Weakest signal'), fmt.DASH, _('no clients'), 'plain')
+		]);
+	},
+
+	/* wired-only: what flows, how long the uplink has held, which
+	   networks are up and which is busiest */
+	paintNetKpis: function() {
+		var self = this, m = this.m, st = this.st, up = st.uplinkRate, link = m.uplink;
+		var nets = m.networks, upNets = nets.filter(function(n) { return n.up; });
+		var busiest = null;
+		upNets.forEach(function(n) {
+			var r = n.dev ? st.devRates[n.dev] : null;
+			if (r && r.rx + r.tx > 0 && (!busiest || r.rx + r.tx > busiest.r.rx + busiest.r.tx)) busiest = { n: n, r: r };
+		});
+		function toNetwork() { window.location.href = L.url.apply(L, insight.PAGES.network); }
+		dom.content(this.el.kpis, [
+			kpi(_('Traffic now'), up ? '↓ ' + fmt.bits(up.rx) : fmt.DASH, up ? _('↑ %s · via %s').format(fmt.bits(up.tx), link ? link.dev : '') : _('measuring'), 'plain', function() { self.openDrawer('uplink', 'uplink'); }),
+			kpi(_('Connected for'), link && link.uptime != null ? fmt.duration(link.uptime) : fmt.DASH, link ? [ link.iface, link.proto ].filter(Boolean).join(' · ') : _('no uplink'), 'plain', function() { self.openDrawer('uplink', 'uplink'); }),
+			kpi(_('Networks'), String(upNets.length), nets.length > upNets.length ? _('%d down').format(nets.length - upNets.length) : _('all up'), 'plain', toNetwork),
+			busiest ? kpi(_('Busiest network'), busiest.n.name, '↓ ' + fmt.bits(busiest.r.tx) + '  ↑ ' + fmt.bits(busiest.r.rx), 'plain', toNetwork)
+				: kpi(_('Busiest network'), fmt.DASH, _('no traffic yet'), 'plain')
 		]);
 	},
 
@@ -1055,13 +1492,8 @@ return view.extend({
 		el.chartTip = E('div', { 'class': 'vt-tip', 'hidden': 'hidden' });
 		el.chartOver = E('div', { 'class': 'vt-mult-over', 'aria-hidden': 'true' }, [ el.chartCursor, el.chartTip ]);
 		el.chartX = E('div', { 'class': 'vt-mult-x', 'aria-hidden': 'true' });
-		el.chartBtns = {};
-		var seg = E('div', { 'class': 'vt-seg-ctl', 'role': 'group', 'aria-label': _('Direction') }, [ 'down', 'up' ].map(function(k) {
-			return el.chartBtns[k] = E('button', { 'type': 'button', 'class': 'vt-seg-btn', 'aria-pressed': 'false',
-				'click': function() { self.ui.chart = k; self.paintChart(); } }, [ icon(k), E('span', {}, [ k === 'down' ? _('Download') : _('Upload') ]) ]);
-		}));
 		var plot = E('div', { 'class': 'vt-mult-wrap', 'tabindex': '0', 'role': 'group',
-			'aria-label': _('Throughput per link; arrow keys read the values over time') }, [ el.chartRows, el.chartOver, el.chartX ]);
+			'aria-label': _('Throughput per link, download above the line and upload below; arrow keys read the values over time') }, [ el.chartRows, el.chartOver, el.chartX ]);
 		plot.addEventListener('pointermove', function(ev) { self.chartPointer(ev); });
 		plot.addEventListener('pointerleave', function() { if (!self.ui.hover || self.ui.hover.x != null) self.chartHide(); });
 		plot.addEventListener('keydown', function(ev) { self.chartKey(ev); });
@@ -1071,27 +1503,40 @@ return view.extend({
 		return this.foldable('chart', E('section', { 'class': 'vt-tile vt-chart', 'aria-label': _('Throughput') }, [
 			E('header', { 'class': 'vt-tile-head' }, [
 				E('h3', { 'class': 'vt-tile-title' }, [ icon('pulse'), E('span', {}, [ _('Throughput') ]), el.chartSub ]),
-				E('div', { 'class': 'vt-tile-extra' }, [ seg, this.foldButton('chart', _('Show or hide the throughput chart')) ])
+				E('div', { 'class': 'vt-tile-extra' }, [
+					E('span', { 'class': 'vt-legend vt-dir-legend' }, [
+						E('span', { 'class': 'vt-legend-item' }, [ dirKey('dn'), E('span', {}, [ _('Download') ]) ]),
+						E('span', { 'class': 'vt-legend-item' }, [ dirKey('up'), E('span', {}, [ _('Upload') ]) ])
+					]),
+					this.foldButton('chart', _('Show or hide the throughput chart'))
+				])
 			]),
 			plot,
 			el.chartLive
 		]));
 	},
 
-	/* one small multiple per link: the uplink, then each radio. Each has
-	   its own y scale (a busy uplink would flatten an idle radio), labelled
-	   with its unit, on a shared time axis and crosshair. */
+	/* one small multiple per link: the uplink, then each radio. Download
+	   (towards the clients) rises above the middle line, upload hangs
+	   below it, each in its direction's colour; each half has its own y
+	   scale (upload is often a hundredth of download, and a busy uplink
+	   would flatten an idle radio), labelled with its unit, on a shared
+	   time axis and crosshair. Columns of a
+	   history point [ t, rx, tx ]: the uplink receives what clients
+	   download, a radio sends it. */
 	chartSeries: function() {
-		var m = this.m, down = this.ui.chart === 'down';
-		var list = [ { key: 'uplink', label: m.uplink ? _('Uplink %s').format(m.uplink.dev) : _('Uplink'), cls: 'vt-c-up', col: down ? 1 : 2 } ];
-		m.radios.forEach(function(r) { list.push({ key: r.id, label: _('%s radio').format(r.bandLabel), cls: 'vt-c-' + (r.band || 'x'), col: down ? 2 : 1 }); });
+		var m = this.m;
+		var list = [ { key: 'uplink', label: m.uplink ? _('Uplink %s').format(m.uplink.dev) : _('Uplink'), dn: 1, up: 2 } ];
+		m.radios.forEach(function(r) { list.push({ key: r.id, label: _('%s radio').format(r.bandLabel), dn: 2, up: 1 }); });
 		return list;
 	},
 
 	paintChart: function() {
-		var self = this, el = this.el, net = this.st.hist.net, W = 600, H = 100, now = Date.now();
-		var list = this.chartSeries(), down = this.ui.chart === 'down';
-		Object.keys(el.chartBtns).forEach(function(k) { el.chartBtns[k].setAttribute('aria-pressed', String(self.ui.chart === k)); });
+		var el = this.el, net = this.st.hist.net, W = 600, H = 100, M = H / 2, now = Date.now();
+		var list = this.chartSeries();
+		/* sample times follow the device's clock (model.sampleClock) and
+		   can run ahead of the browser's: the axis ends at the newest one */
+		list.forEach(function(s) { var h = net[s.key]; if (h && h.length) now = Math.max(now, h[h.length - 1][0]); });
 
 		var dm = series.domain(list.map(function(s) { return net[s.key]; }), now, 60000, WINDOW_MS);
 		var ticks = [];
@@ -1101,42 +1546,56 @@ return view.extend({
 
 		dom.content(el.chartRows, list.map(function(s) {
 			var d = (net[s.key] || []).filter(function(p) { return p[0] >= dm.t0 - POLL_S * 1000; });
-			var st = series.stats(d, s.col, dm.t0);
+			var sd = series.stats(d, s.dn, dm.t0), su = series.stats(d, s.up, dm.t0);
 			var last = d.length ? d[d.length - 1] : null, fresh = !!(last && now - last[0] < POLL_S * 3000);
-			var vmax = series.niceCeil(Math.max((st.peak || 0) * 1.05, 1000));
-			samples = Math.max(samples, st.n);
+			var vd = series.niceCeil(Math.max((sd.peak || 0) * 1.05, 1000)), vu = series.niceCeil(Math.max((su.peak || 0) * 1.05, 1000));
+			samples = Math.max(samples, sd.n);
 
 			var svg = svgRoot('vt-mult-svg', '0 0 ' + W + ' ' + H);
 			svg.setAttribute('preserveAspectRatio', 'none');
-			svg.appendChild(svgPath('M0 0.5H' + W + 'M0 ' + (H / 2) + 'H' + W, 'vt-chart-grid'));
+			svg.appendChild(svgPath('M0 0.5H' + W + 'M0 ' + (H - 0.5) + 'H' + W, 'vt-chart-grid'));
 			ticks.forEach(function(k) {
 				var x = (1 - k * 60000 / dm.span) * W;
 				svg.appendChild(svgPath('M' + x.toFixed(1) + ' 0V' + H, 'vt-chart-vgrid'));
 			});
-			var segs = series.segments(d, s.col, dm.t0, dm.t1, vmax, W, H, POLL_S * 3500);
-			var area = svgPath(series.areaPath(segs, H), 'vt-series-area');
-			area.setAttribute('fill', fadeFill(svg));
-			svg.appendChild(area);
-			svg.appendChild(svgPath(series.linePath(segs), 'vt-series-line'));
+			/* download: y in [0, M] with 0 at the line; upload mirrored below */
+			var segD = series.segments(d, s.dn, dm.t0, dm.t1, vd, W, M, POLL_S * 3500);
+			var segU = series.segments(d, s.up, dm.t0, dm.t1, vu, W, M, POLL_S * 3500).map(function(seg) {
+				return seg.map(function(pt) { return [ pt[0], H - pt[1] ]; });
+			});
+			[ [ segD, false, '' ], [ segU, true, ' vt-dir-up' ] ].forEach(function(h) {
+				var area = svgPath(series.areaPath(h[0], M), 'vt-series-area' + h[2]);
+				area.setAttribute('fill', fadeFill(svg, h[1], h[2].trim()));
+				svg.appendChild(area);
+				svg.appendChild(svgPath(series.linePath(h[0]), 'vt-series-line' + h[2]));
+			});
+			svg.appendChild(svgPath('M0 ' + M + 'H' + W, 'vt-chart-mid'));
 
-			var tail = segs.length ? segs[segs.length - 1] : null, pt = tail && tail[tail.length - 1];
-			var dot = E('span', { 'class': 'vt-mult-dot', 'hidden': 'hidden' });
-			rows.push({ s: s, d: d, vmax: vmax, dot: dot });
-			return E('div', { 'class': 'vt-mult ' + s.cls }, [
+			function tailDot(segs, cls) {
+				var tail = segs.length ? segs[segs.length - 1] : null, pt = tail && tail[tail.length - 1];
+				return pt && fresh ? pos(E('span', { 'class': 'vt-sk-dot' + cls }), pt[0] / W * 100, pt[1] / H * 100) : '';
+			}
+			var dotD = E('span', { 'class': 'vt-mult-dot', 'hidden': 'hidden' }), dotU = E('span', { 'class': 'vt-mult-dot vt-dir-up', 'hidden': 'hidden' });
+			rows.push({ s: s, d: d, vd: vd, vu: vu, dotD: dotD, dotU: dotU });
+			return E('div', { 'class': 'vt-mult' }, [
 				E('div', { 'class': 'vt-mult-head' }, [
-					E('span', { 'class': 'vt-mult-name' }, [ E('span', { 'class': 'vt-lg-key' }), E('span', {}, [ s.label ]) ]),
-					E('b', { 'class': 'vt-mult-now vt-tn' }, [ fresh && st.now != null ? fmt.bits(last[s.col]) : fmt.DASH ]),
-					E('span', { 'class': 'vt-mult-stats vt-tn' }, st.n > 1 ? [
-						E('span', {}, [ _('peak'), ' ', E('b', {}, [ fmt.bits(st.peak) ]) ]),
-						E('span', {}, [ _('avg'), ' ', E('b', {}, [ fmt.bits(st.avg) ]) ])
+					E('span', { 'class': 'vt-mult-name' }, [ s.label ]),
+					E('span', { 'class': 'vt-mult-now', 'title': _('Download') }, [ dirKey('dn'),
+						E('b', { 'class': 'vt-tn' }, [ dirArrow('dn'), ' ', fresh && sd.now != null ? fmt.bits(last[s.dn]) : fmt.DASH ]) ]),
+					E('span', { 'class': 'vt-mult-now vt-mult-now-up', 'title': _('Upload') }, [ dirKey('up'),
+						E('b', { 'class': 'vt-tn' }, [ dirArrow('up'), ' ', fresh && su.now != null ? fmt.bits(last[s.up]) : fmt.DASH ]) ]),
+					E('span', { 'class': 'vt-mult-stats vt-tn' }, sd.n > 1 ? [
+						E('span', {}, [ _('peak'), ' ', E('b', {}, [ dirArrow('dn'), ' ' + fmt.bitsShort(sd.peak) ]), ' ', E('b', {}, [ dirArrow('up'), ' ' + fmt.bitsShort(su.peak) ]) ])
 					] : [ E('span', {}, [ _('measuring…') ]) ])
 				]),
 				E('div', { 'class': 'vt-mult-plot' }, [
 					svg,
-					st.n ? E('span', { 'class': 'vt-mult-max vt-tn' }, [ bitsLabel(vmax) ]) : '',
-					st.n < 2 ? E('span', { 'class': 'vt-sk-note' }, [ _('collecting…') ]) : '',
-					pt && fresh ? pos(E('span', { 'class': 'vt-sk-dot' }), pt[0] / W * 100, pt[1] / H * 100) : '',
-					dot
+					sd.n ? E('span', { 'class': 'vt-mult-max vt-tn' }, [ dirArrow('dn'), ' ' + bitsLabel(vd) ]) : '',
+					sd.n ? E('span', { 'class': 'vt-mult-max vt-mult-max-up vt-tn' }, [ dirArrow('up'), ' ' + bitsLabel(vu) ]) : '',
+					sd.n < 2 ? E('span', { 'class': 'vt-sk-note' }, [ _('collecting…') ]) : '',
+					tailDot(segD, ''),
+					tailDot(segU, ' vt-dir-up'),
+					dotD, dotU
 				])
 			]);
 		}));
@@ -1152,8 +1611,8 @@ return view.extend({
 		})).concat([ E('span', { 'class': 'vt-mx vt-mx-1' }, [ _('now') ]) ]));
 
 		var age = dm.age;
-		txt(el.chartSub, (down ? _('to clients') : _('from clients')) + ' · ' + (dm.full ? _('last 5 min')
-			: samples < 2 ? _('collecting · first samples') : _('collecting · %s of data').format(spanShort(age))));
+		txt(el.chartSub, dm.full ? _('last 5 min')
+			: samples < 2 ? _('collecting · first samples') : _('collecting · %s of data').format(spanShort(age)));
 		el.plot.classList.toggle('vt-collecting', !dm.full);
 		if (this.ui.hover) this.chartShow(this.ui.hover);
 	},
@@ -1183,17 +1642,31 @@ return view.extend({
 		this.ui.hover = at.t != null ? { t: tp } : at;
 		el.chartCursor.hidden = false;
 		el.chartCursor.style.left = x.toFixed(2) + '%';
+		var said = [];
 		var tipRows = meta.rows.map(function(r) {
-			var j = series.nearest(r.d, tp), v = (j >= 0 && Math.abs(r.d[j][0] - tp) < POLL_S * 1000) ? r.d[j][r.s.col] : null;
-			r.dot.hidden = v == null;
-			if (v != null) pos(r.dot, x, (1 - Math.min(1, v / r.vmax)) * 100);
-			return E('div', { 'class': 'vt-tip-row ' + r.s.cls }, [ E('span', { 'class': 'vt-lg-key' }), E('b', { 'class': 'vt-tn' }, [ v == null ? fmt.DASH : fmt.bits(v) ]), E('span', { 'class': 'vt-tip-label' }, [ r.s.label ]) ]);
+			var j = series.nearest(r.d, tp), p = (j >= 0 && Math.abs(r.d[j][0] - tp) < POLL_S * 1000) ? r.d[j] : null;
+			var vd = p ? p[r.s.dn] : null, vu = p ? p[r.s.up] : null;
+			r.dotD.hidden = vd == null;
+			r.dotU.hidden = vu == null;
+			if (vd != null) pos(r.dotD, x, (1 - Math.min(1, vd / r.vd)) * 50);
+			if (vu != null) pos(r.dotU, x, 50 + Math.min(1, vu / r.vu) * 50);
+			var bd = vd == null ? fmt.DASH : fmt.bits(vd), bu = vu == null ? fmt.DASH : fmt.bits(vu);
+			said.push(r.s.label + ': ↓ ' + bd + ' ↑ ' + bu);
+			return E('div', { 'class': 'vt-tip-link' }, [
+				E('div', { 'class': 'vt-tip-label' }, [ r.s.label ]),
+				E('div', { 'class': 'vt-tip-row' }, [ dirKey('dn'), E('span', {}, [ _('Download') ]), E('b', { 'class': 'vt-tn' }, [ bd ]) ]),
+				E('div', { 'class': 'vt-tip-row' }, [ dirKey('up'), E('span', {}, [ _('Upload') ]), E('b', { 'class': 'vt-tn' }, [ bu ]) ])
+			]);
 		});
 		dom.content(el.chartTip, [ E('div', { 'class': 'vt-tip-time vt-tn' }, [ new Date(tp).toLocaleTimeString(), E('span', {}, [ fmt.ago(Date.now() - tp) ]) ]) ].concat(tipRows));
 		el.chartTip.hidden = false;
-		el.chartTip.style.left = x.toFixed(2) + '%';
-		el.chartTip.classList.toggle('vt-tip-left', x > 55);
-		if (at.t != null) txt(el.chartLive, [ new Date(tp).toLocaleTimeString() ].concat(tipRows.map(function(r) { return r.textContent; })).join('; '));
+		/* beside the crosshair, on the side it fits; on a narrow chart it
+		   may cover the readouts on the left but never leaves the tile */
+		var ow = el.chartOver.clientWidth, tw = el.chartTip.offsetWidth, px = x / 100 * ow, gap = 12;
+		var lx = px + gap + tw <= ow ? px + gap : px - gap - tw;
+		lx = Math.max(-el.chartOver.offsetLeft, Math.min(ow - tw, lx));
+		el.chartTip.style.left = lx.toFixed(0) + 'px';
+		if (at.t != null) txt(el.chartLive, [ new Date(tp).toLocaleTimeString() ].concat(said).join('; '));
 	},
 
 	chartHide: function() {
@@ -1201,7 +1674,7 @@ return view.extend({
 		this.ui.hover = null;
 		el.chartCursor.hidden = true;
 		el.chartTip.hidden = true;
-		(this.chartMeta ? this.chartMeta.rows : []).forEach(function(r) { r.dot.hidden = true; });
+		(this.chartMeta ? this.chartMeta.rows : []).forEach(function(r) { r.dotD.hidden = true; r.dotU.hidden = true; });
 	},
 
 	chartKey: function(ev) {
@@ -1957,8 +2430,12 @@ return view.extend({
 			this.closeDrawer();
 			return;
 		}
+		if (ev.key === 'Escape' && this.editing && !this.drag) {
+			this.setEditing(false);
+			return;
+		}
 		/* 'f' focuses the client filter; '/' and Ctrl+K belong to the theme */
-		if ((ev.key === 'f' || ev.key === 'F') && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !this.ui.drawer) {
+		if ((ev.key === 'f' || ev.key === 'F') && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !this.ui.drawer && !this.m.wired) {
 			ev.preventDefault();
 			this.el.filter.focus();
 			this.el.filter.select();

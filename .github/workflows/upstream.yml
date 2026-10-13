@@ -405,7 +405,7 @@ jobs:
           (
           git_sparse_clone master "https://github.com/coolsnowwolf/packages" multimedia/UnblockNeteaseMusic-Go \
           multimedia/UnblockNeteaseMusic multimedia/aliyundrive-webdav net/gowebdav net/kismet net/mstpd \
-          net/phtunnel net/headscale net/clouddrive2 net/baidupcs-go net/modemband net/daemonlogger net/geth net/gnurl \
+          net/phtunnel net/headscale net/ksmbd-tools net/clouddrive2 net/baidupcs-go net/modemband net/daemonlogger net/geth net/gnurl \
           net/uugamebooster net/pgyvpn net/vlmcsd net/ooniprobe net/polipo net/rosy-file-server net/qiyougamebooster \
           net/sqm-scripts-extra net/tor-fw-helper net/vncrepeater net/verysync \
           net/vpnbypass net/vpn-policy-routing utils/qfirehose
@@ -451,7 +451,7 @@ jobs:
           git_clone https://github.com/koshev-msk/modemfeed && mv -n modemfeed/*/!(telephony)/!(ookla-speedtest) ./; rm -rf modemfeed
           git_sparse_clone master "https://github.com/immortalwrt/luci" applications collections/luci-nginx \
           modules/luci-mod-dashboard themes/luci-theme-footstrap protocols/luci-proto-minieap protocols/luci-proto-quectel
-          mv -f applications luciapp && rm -rf luciapp/{luci-app-firewall,luci-app-ksmbd}
+          mv -f applications luciapp && rm -rf luciapp/{luci-app-firewall,luci-app-ksmbd,luci-app-diskman}
           git_sparse_clone openwrt-25.12 "https://github.com/coolsnowwolf/luci" applications \
           modules/luci-base modules/luci-mod-network modules/luci-mod-status modules/luci-mod-system libs/rpcd-mod-luci protocols/luci-proto-openvpnc themes/luci-theme-design
           mv -n applications/* luciapp/; rm -rf applications

@@ -65,12 +65,11 @@ const CFG = Object.freeze({
 	}),
 	LIBEXEC: Object.freeze({
 		luci_app_openvpn_plus: '/usr/libexec/luci-app-openvpn-plus',
-		readfile: 'readfile',
-		statfile: 'statfile',
-		readstatus: 'readstatus',
 		getmac: 'getmac',
-		getnetstat: 'getnetstat',
 		ovpnver: 'ovpnver',
+		getnetstat: 'getnetstat',
+		readstatus: 'readstatus',
+		statfile: 'statfile',
 	}),
 	CMD: Object.freeze({
 		openvpn: 'openvpn',
@@ -171,11 +170,15 @@ const nativeFileExecRpc = L.rpc.declare({
 /**
  * Wrapper for /usr/libexec/luci-app-openvpn-plus using the native ubus RPC directly
  */
-const luci_app_openvpn_plus = async function (args) {
+const luci_app_openvpn_plus = async function (args, skipTrim) {
 	const extraArgs = (typeof args === 'string') ? [args] : (Array.isArray(args) ? args : []);
 	const res = await L.resolveDefault(nativeFileExecRpc(CFG.LIBEXEC.luci_app_openvpn_plus, extraArgs), {});
 	if (res && typeof res === 'object' && typeof res.stdout === 'string') {
-		return res.stdout.trim();
+		if (skipTrim === true) {
+			return res.stdout.trim();
+		} else {
+			return res.stdout.trim();
+		}
 	}
 	return '';
 };
@@ -202,11 +205,11 @@ const rpcGetServiceStatus = async function () {
 };
 
 /**
- * Asynchronously reads a file as a plain string via the secure backend helper
+ * Asynchronously read status file as a plain string via the secure backend helper
  */
-const secureReadFile = async function (filepath) {
+const secureReadStatusFile = async function (filepath) {
 	// PASS true AS SECOND PARAMETER TO KEEP ALL NEWLINES AND SPACES!
-	const res = await luci_app_openvpn_plus([CFG.LIBEXEC.readfile, filepath], true);
+	const res = await luci_app_openvpn_plus([CFG.LIBEXEC.readstatus, filepath], true);
 	if (res && res.length > 0) {
 		return res;
 	}
@@ -219,7 +222,7 @@ const secureReadFile = async function (filepath) {
 const secureStatFile = async function (filepath) {
 	const res = await luci_app_openvpn_plus([CFG.LIBEXEC.statfile, filepath]);
 	try {
-		if (res && res.trim().startsWith("{")) {
+		if (res && res.startsWith("{")) {
 			const statObj = JSON.parse(res);
 			if (statObj && typeof statObj === 'object') {
 				return statObj;
@@ -324,7 +327,7 @@ const getOpenVpnInfo = async function () {
  * Reads system uptime from the proc filesystem asynchronously
  */
 const getSystemUptime = async function () {
-	const rawUptime = await secureReadFile(CFG.FILE.proc_uptime);
+	const rawUptime = await secureReadStatusFile(CFG.FILE.proc_uptime);
 	// Split the output string by spaces to separate uptime and idle time
 	const partsUptime = String(rawUptime || '0').trim().split(/\s+/);
 	const uptime = (partsUptime && partsUptime[0]) ? parseFloat(partsUptime[0]) : 0;
@@ -1149,7 +1152,7 @@ const getInstanceConfig = async function (id, instNum, role, path_conf) {
 		// Proceed to live compilation on error
 	}
 
-	let confContent = sanitizeInputText(await secureReadFile(path_conf));
+	let confContent = sanitizeInputText(await secureReadStatusFile(path_conf));
 	if (confContent.length === 0) {
 		// Signals readSingleInstanceStatus to execute early exit template
 		return null;
@@ -1314,7 +1317,7 @@ const getConnectedClientsStatus = async function (inst) {
 			}
 
 			// change detected - parse status file
-			const statusContent = await luci_app_openvpn_plus([CFG.LIBEXEC.readstatus, inst.id]);
+			const statusContent = await secureReadStatusFile(CFG.FILE.var_run_openvpn + inst.id + '.status');
 
 			if (statusContent.length > 0) {
 				const freshClients = parseConnectedClients(statusContent, inst);

@@ -397,11 +397,15 @@ const nativeFileExecRpc = L.rpc.declare({
 /**
  * Wrapper for /usr/libexec/luci-app-openvpn-plus using the native ubus RPC directly
  */
-const luci_app_openvpn_plus = async function (args) {
+const luci_app_openvpn_plus = async function (args, skipTrim) {
 	const extraArgs = (typeof args === 'string') ? [args] : (Array.isArray(args) ? args : []);
 	const res = await L.resolveDefault(nativeFileExecRpc(CFG.LIBEXEC.luci_app_openvpn_plus, extraArgs), {});
 	if (res && typeof res === 'object' && typeof res.stdout === 'string') {
-		return res.stdout.trim();
+		if (skipTrim === true) {
+			return res.stdout.trim();
+		} else {
+			return res.stdout.trim();
+		}
 	}
 	return '';
 };
@@ -447,7 +451,7 @@ const secureWriteFile = async function (filepath, content) {
 	const res = await luci_app_openvpn_plus([CFG.LIBEXEC.writefile, filepath, textData]);
 
 	if (res && res.includes("ERROR:")) {
-		console.error("Secure write failed: ", CFG.LIBEXEC.luci_app_openvpn_plus + ' ' + CFG.LIBEXEC.writefile + ' ' + filepath + ' ' + textData + ' -> ' + res);
+		console.error("Secure write failed: ", CFG.LIBEXEC.luci_app_openvpn_plus + ' ' + CFG.LIBEXEC.writefile + ' ' + filepath + ' -> ' + res);
 		return -1;
 	}
 	return 0;
@@ -471,7 +475,7 @@ const secureRemoveFile = async function (filepath) {
 const secureStatFile = async function (filepath) {
 	const res = await luci_app_openvpn_plus([CFG.LIBEXEC.statfile, filepath]);
 	try {
-		if (res && res.trim().startsWith("{")) {
+		if (res && res.startsWith("{")) {
 			const statObj = JSON.parse(res);
 			if (statObj && typeof statObj === 'object') {
 				return statObj;

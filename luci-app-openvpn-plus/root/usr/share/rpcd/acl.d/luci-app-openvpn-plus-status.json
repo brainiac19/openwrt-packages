@@ -14,7 +14,6 @@
 				"/usr/libexec/luci-app-openvpn-plus ovpnver": [ "exec" ],
 				"/usr/libexec/luci-app-openvpn-plus getnetstat *": [ "exec" ],
 				"/usr/libexec/luci-app-openvpn-plus readstatus *": [ "exec" ],
-				"/usr/libexec/luci-app-openvpn-plus readfile *": [ "exec" ],
 				"/usr/libexec/luci-app-openvpn-plus statfile *": [ "exec" ]
 			}
 		}

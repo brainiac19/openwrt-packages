@@ -203,7 +203,7 @@ index ad0a166..c58c860 100644
  			<div>
 -				<h1 class="vt-login-title">Vantage</h1>
 +				<h1 class="vt-login-title">{{ hostname }}</h1>
- 				<p class="vt-login-sub"><span class="vt-live-dot" aria-hidden="true"></span>{{ entityencode(_('Authorization Required'), true) }}</p>
+ 				<p class="vt-login-sub"><span class="vt-login-dot" aria-hidden="true"></span>{{ entityencode(_('Authorization Required'), true) }}</p>
  			</div>
  		</div>
 diff --git a/luci-theme-vantage/htdocs/luci-static/vantage/pattern.svg b/luci-theme-vantage/htdocs/luci-static/vantage/pattern.svg

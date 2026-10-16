@@ -193,6 +193,9 @@ msgstr "正在向模组发送操作指令，请稍候..."
 msgid "Action executed successfully."
 msgstr "动作执行成功。"
 
+msgid "Modem reboot signal sent successfully. The module is rebooting, cellular network will reinitialize in 15-30 seconds."
+msgstr "模组重启指令已成功下发。模组正在重启，蜂窝网络将在 15-30 秒内重新初始化。"
+
 msgid "Action failed: "
 msgstr "动作执行失败: "
 
@@ -238,17 +241,20 @@ msgstr "MBIM模式"
 msgid "NCM Mode"
 msgstr "NCM模式"
 
-msgid "QMI Mode"
-msgstr "QMI模式"
+msgid "NCM Mode (Recommended)"
+msgstr "推荐NCM模式"
 
 msgid "ECM Mode"
 msgstr "ECM模式"
 
-msgid "RNDIS Mode"
-msgstr "RNDIS模式"
+msgid "Switching the operation mode requires restarting the modem to take effect. NCM provides high-speed throughput with low CPU overhead, while ECM provides standard compatibility."
+msgstr "切换工作模式需要重启模组生效。NCM模式具备低CPU负载的高速聚合吞吐，ECM模式提供通用以太网兼容性。"
 
-msgid "Switching the operation mode requires restarting the modem to take effect."
-msgstr "切换工作模式后需要重新复位模组方能使新驱动生效。"
+msgid "Switching Operation Mode"
+msgstr "切换工作模式"
+
+msgid "Operation mode updated. The module is rebooting, please wait 20 seconds for bus re-enumeration and port re-scan..."
+msgstr "工作模式已更新。模组正在重启，请等待20秒以完成总线重枚举与端口重新扫描..."
 
 msgid "Sync OpenWrt Network"
 msgstr "同步网络配置"
@@ -489,6 +495,9 @@ msgstr "停用功能"
 
 msgid "SIM Card Storage Capacity: "
 msgstr "SIM卡存储容量: "
+
+msgid "SIM Card Storage Capacity"
+msgstr "SIM卡存储容量"
 
 msgid "Messages"
 msgstr "条短信"

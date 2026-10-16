@@ -47,7 +47,8 @@ const ICONS = {
 	auto: [ [ 'circle', { cx: '12', cy: '12', r: '8' } ], [ 'path', { d: 'M12 4a8 8 0 0 1 0 16z', 'class': 'vt-fill' } ] ],
 	logout: [ [ 'path', { d: 'M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14' } ], [ 'path', { d: 'M10 8l-4 4 4 4M6 12h10' } ] ],
 	pin: [ [ 'path', { d: 'M4 5v14M9 12h11M15 7l5 5-5 5' } ] ],
-	info: [ [ 'circle', { cx: '12', cy: '12', r: '8.5' } ], [ 'path', { d: 'M12 11v5.5' } ], [ 'circle', { cx: '12', cy: '7.75', r: '.6' } ] ]
+	info: [ [ 'circle', { cx: '12', cy: '12', r: '8.5' } ], [ 'path', { d: 'M12 11v5.5' } ], [ 'circle', { cx: '12', cy: '7.75', r: '.6' } ] ],
+	more: [ [ 'circle', { cx: '5.5', cy: '12', r: '.9' } ], [ 'circle', { cx: '12', cy: '12', r: '.9' } ], [ 'circle', { cx: '18.5', cy: '12', r: '.9' } ] ]
 };
 
 function iconFor(name) {
@@ -186,6 +187,14 @@ function headingKey(text) {
 	return String(text || '').replace(/\s+/g, ' ').replace(/[\s:]+$/, '').trim().toLowerCase();
 }
 
+/* Does a heading only repeat the breadcrumb? A page title (h2) may repeat
+   any crumb; a card heading (h3) only the page's or the tab's, never the
+   category's: on Services > Dynamic DNS the "Services" table is content. */
+function repeatsTrail(key, tag, trail) {
+	if (!key) return false;
+	return (tag === 'H2' ? trail.all : trail.page).has(key);
+}
+
 /* ---------------------------------------------------------------------------
  * Stock-page enhancers, only where CSS cannot restructure LuCI's markup
  * (Status -> Overview: fused memory bar, per-mount storage bars, radio band
@@ -216,12 +225,12 @@ function parseBarTitle(title) {
 function fmtBytes(n) { return String.format('%1024.1mB', Math.max(0, n)); }
 function pctOf(n, total) { return total > 0 ? Math.round(100 * n / total) : 0; }
 
-/* the Overview .cbi-section whose title (text before the Hide/Show label) is `title` */
+/* the Overview .cbi-section whose title (text before the Hide/Show label) is `title`; LuCI 24.10: a bare first h3 */
 function statusSections(title) {
-	return Array.prototype.filter.call(document.querySelectorAll('#view .cbi-section > .cbi-title > h3'), hd => {
+	return Array.prototype.filter.call(document.querySelectorAll('#view .cbi-section > .cbi-title > h3, #view .cbi-section > h3:first-child'), hd => {
 		const t = hd.firstChild;
 		return t && t.nodeType === 3 && t.data.trim() === title;
-	}).map(hd => hd.parentNode.parentNode);
+	}).map(hd => hd.closest('.cbi-section'));
 }
 
 /* the include's freshly rendered table, if it has not been enhanced yet */
@@ -587,12 +596,13 @@ return baseclass.extend({
 		this.closeTimer = null;
 		this.openTimer = null;
 		this.entries = [];
-		this.trailKeys = new Set();
+		this.trail = { all: new Set(), page: new Set() };
 
 		this.setupTheme();
 		this.setupIndicators();
 		this.setupNumerals();
 		this.setupForms();
+		this.setupTooltips();
 		setupStockEnhancers();
 		setupCharts();
 		this.setupKeys();
@@ -670,8 +680,11 @@ return baseclass.extend({
 				link.lastChild.setAttribute('class', 'vt-rail-caret');
 
 				link.addEventListener('click', ev => this.handleRailClick(ev, cat, li, link));
+				/* hover opens a category; an open page switcher was opened on
+				   purpose, so passing over the rail leaves it be (a click on a
+				   category still swaps it) */
 				li.addEventListener('pointerenter', ev => {
-					if (ev.pointerType !== 'mouse' || this.isPinned() || this.mqMobile.matches) return;
+					if (ev.pointerType !== 'mouse' || this.isPinned() || this.mqMobile.matches || this.switchOpen()) return;
 					this.cancelClose();
 					window.clearTimeout(this.openTimer);
 					this.openTimer = window.setTimeout(() => this.openFlyout(cat, li, link, false), this.fly.hidden ? 90 : 0);
@@ -679,6 +692,7 @@ return baseclass.extend({
 				li.addEventListener('pointerleave', ev => {
 					if (ev.pointerType !== 'mouse') return;
 					window.clearTimeout(this.openTimer);
+					if (this.isPinned() || this.switchOpen()) return;
 					this.scheduleClose();
 				});
 
@@ -703,6 +717,9 @@ return baseclass.extend({
 		fly.addEventListener('pointerenter', () => this.cancelClose());
 		fly.addEventListener('pointerleave', ev => { if (ev.pointerType === 'mouse' && !fly.classList.contains('is-switch')) this.scheduleClose(); });
 		fly.addEventListener('keydown', ev => this.handleFlyKeys(ev));
+		/* the switcher closes once focus moves on past it (a null target is
+		   a click on nothing focusable, which the document click handles) */
+		fly.addEventListener('focusout', ev => this.leaveSwitch(ev.relatedTarget));
 		if (this.scrim) this.scrim.addEventListener('click', () => this.closeFlyout(false));
 
 		document.addEventListener('click', ev => {
@@ -777,7 +794,8 @@ return baseclass.extend({
 	handleFlyKeys(ev) {
 		const links = Array.prototype.slice.call(this.fly.querySelectorAll('a'));
 		const i = links.indexOf(document.activeElement);
-		if (ev.key === 'Escape' || (ev.key === 'ArrowLeft' && !this.mqMobile.matches)) {
+		const isSwitch = this.switchOpen();
+		if (ev.key === 'Escape' || (ev.key === 'ArrowLeft' && !isSwitch && !this.mqMobile.matches)) {
 			ev.preventDefault();
 			this.closeFlyout(true);
 		}
@@ -787,10 +805,51 @@ return baseclass.extend({
 			links[(i + d + links.length) % links.length].focus();
 		}
 		else if (ev.key === 'Tab' && links.length) {
-			/* leaving the panel returns to the rail */
 			const edge = ev.shiftKey ? 0 : links.length - 1;
-			if (i === edge) { ev.preventDefault(); this.closeFlyout(true); }
+			if (i !== edge) return;
+			ev.preventDefault();
+			/* the switcher reads as part of the top bar, after its crumb:
+			   Tab goes on to the next control there, Shift+Tab back to the
+			   crumb. The rail's flyout returns to its rail button. */
+			if (isSwitch && !ev.shiftKey) {
+				const btn = this.switchBtn;
+				this.closeFlyout(false);
+				this.focusAfter(btn);
+			}
+			else this.closeFlyout(true);
 		}
+	},
+
+	/* keys on the crumb switch: arrows open it (or enter it) at the current
+	   page; Tab from the open switch goes into its list */
+	handleSwitchKeys(ev, cat, page, btn) {
+		const down = ev.key === 'ArrowDown', up = ev.key === 'ArrowUp';
+		if (!down && !up && !(ev.key === 'Tab' && !ev.shiftKey && this.switchOpen())) return;
+		ev.preventDefault();
+		if (!this.switchOpen()) { this.openSwitch(cat, page, btn, true); return; }
+		const links = this.fly.querySelectorAll('a');
+		const target = (ev.key === 'Tab' ? null : this.fly.querySelector('a[aria-current]')) ||
+			(up ? links[links.length - 1] : links[0]);
+		if (target) target.focus();
+	},
+
+	switchOpen() {
+		return !!(this.fly && !this.fly.hidden && this.fly.classList.contains('is-switch'));
+	},
+
+	/* focus moved from the switch or its list to `to` */
+	leaveSwitch(to) {
+		if (!to || !this.switchOpen()) return;
+		if (this.fly.contains(to) || to === this.switchBtn) return;
+		this.closeFlyout(false);
+	},
+
+	/* the control after `el` in tab order, outside the flyout */
+	focusAfter(el) {
+		const all = Array.prototype.filter.call(document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]'), n =>
+			n.tabIndex >= 0 && !n.disabled && n.type !== 'hidden' && !this.fly.contains(n) && n.getClientRects().length > 0);
+		const next = all[all.indexOf(el) + 1];
+		(next || el).focus();
 	},
 
 	openFlyout(cat, li, link, focusFirst) {
@@ -866,6 +925,11 @@ return baseclass.extend({
 	openSwitch(cat, page, btn, focusFirst) {
 		const fly = this.fly;
 		if (!fly) return;
+		/* a rail hover may have left a timer behind; closeFlyout() skips
+		   cancelling it when the panel is hidden, so cancel both here */
+		this.cancelClose();
+		window.clearTimeout(this.openTimer);
+		this.openTimer = null;
 		this.closeFlyout(false);
 		fly.textContent = '';
 		const total = page.subs.length;
@@ -939,15 +1003,19 @@ return baseclass.extend({
 			const last = i === parts.length - 1;
 			if (i) nav.appendChild(E('span', { 'class': 'vt-crumb-sep', 'aria-hidden': 'true' }, [ '›' ]));
 			if (last && siblings && parts.length === 3) {
+				/* a disclosure (aria-expanded + aria-controls): the panel is a
+				   region of links, not a menu, so no aria-haspopup */
 				const btn = E('button', {
 					'type': 'button', 'class': 'vt-crumb vt-crumb-current vt-crumb-switch', 'aria-current': 'page',
-					'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-controls': 'vt-flyout',
+					'aria-expanded': 'false', 'aria-controls': 'vt-flyout',
 					'title': _('Other pages in %s').format(siblings.title)
 				}, [ E('span', {}, [ p.title ]), svg('caret', 14) ]);
 				btn.addEventListener('click', ev => {
-					if (this.fly && !this.fly.hidden && this.fly.classList.contains('is-switch')) this.closeFlyout(true);
+					if (this.switchOpen()) this.closeFlyout(true);
 					else this.openSwitch(cat, siblings, btn, ev.detail === 0);
 				});
+				btn.addEventListener('keydown', ev => this.handleSwitchKeys(ev, cat, siblings, btn));
+				btn.addEventListener('focusout', ev => this.leaveSwitch(ev.relatedTarget));
 				nav.appendChild(btn);
 			}
 			else nav.appendChild(last
@@ -956,7 +1024,11 @@ return baseclass.extend({
 		});
 
 		this.pageTitle = parts[parts.length - 1].title;
-		parts.forEach(p => this.trailKeys.add(headingKey(p.title)));
+		parts.forEach((p, i) => {
+			this.trail.all.add(headingKey(p.title));
+			/* the category, unless it is the page itself */
+			if (i || parts.length === 1) this.trail.page.add(headingKey(p.title));
+		});
 		this.updateTitle();
 	},
 
@@ -969,7 +1041,7 @@ return baseclass.extend({
 		const tabs = ui.menu.getChildren(page);
 		if (tabs.length < 2) return;
 
-		const seg = E('div', { 'class': 'vt-seg' });
+		const seg = E('div', { 'class': 'vt-pagetabs' });
 		for (const t of tabs) {
 			const cur = this.dp[3] === t.name;
 			seg.appendChild(E('a', {
@@ -1016,8 +1088,13 @@ return baseclass.extend({
 
 	openPalette() {
 		if (this.pal) return;
+		/* a row menu left open would take the palette's Escape */
+		this.closeActMenu(false);
+		/* focus inside the flyout goes back to what opened the flyout, since
+		   closing it hides the element that had focus */
+		const from = document.activeElement;
+		this.palReturn = (this.fly && this.fly.contains(from)) ? this.openLink : from;
 		this.closeFlyout(false);
-		this.palReturn = document.activeElement;
 
 		const input = E('input', {
 			'class': 'vt-pal-input', 'type': 'text', 'role': 'combobox', 'aria-expanded': 'true',
@@ -1291,6 +1368,28 @@ return baseclass.extend({
 		scan();
 	},
 
+	/* --------------------------------------------------------- tooltips */
+
+	/* LuCI places hover tooltips with CSS only, beside their container: one
+	   that would leave the screen (a port box at the edge of Status ->
+	   Port status) is moved back in, once per container entered */
+	setupTooltips() {
+		const fit = ev => {
+			const box = ev.target && ev.target.closest ? ev.target.closest('.cbi-tooltip-container') : null;
+			if (box === this.tipBox) return;
+			this.tipBox = box;
+			const tip = box && box.querySelector(':scope > .cbi-tooltip');
+			if (!tip) return;
+			tip.style.removeProperty('--vt-tip-dx');
+			const r = tip.getBoundingClientRect(), pad = 8, w = document.documentElement.clientWidth;
+			/* still parked off-screen (not shown yet): nothing to measure */
+			if (r.right < -1000) { this.tipBox = null; return; }
+			const dx = r.left < pad ? pad - r.left : r.right > w - pad ? w - pad - r.right : 0;
+			if (dx) tip.style.setProperty('--vt-tip-dx', dx.toFixed(0) + 'px');
+		};
+		document.addEventListener('mouseover', fit, true);
+	},
+
 	/* ---------------------------------------------------- form chrome */
 
 	/* LuCI renders forms into #view and the modal, and renders them again
@@ -1321,6 +1420,209 @@ return baseclass.extend({
 		document.querySelectorAll(':is(.cbi-map-descr, .cbi-section-descr):not(:has(> .vt-help))')
 			.forEach(desc => this.addIntroHelp(desc));
 		this.markRepeats();
+		this.decorateRowActions();
+	},
+
+	/* ---------------------------------------------- row action menus */
+
+	/* A table row folds when it has a main action (Edit, else LuCI's
+	   "important" button) and at least two others to put in a ⋯ menu.
+	   Add, "important" and plain action buttons stay out of the menu: they
+	   are what the row is for (Wireless's Add, Wake on LAN's Wake). Rows
+	   of peer actions (Startup, Processes) have no main one and stay as
+	   LuCI drew them. LuCI's buttons stay where LuCI put them, only
+	   hidden: a menu item clicks the original, so the handler, any
+	   confirmation and the current label (Enable or Disable) are LuCI's
+	   own. The drag handle stays. */
+	decorateRowActions() {
+		document.querySelectorAll('.cbi-section-actions > div').forEach(box => {
+			if (!box.closest('.vt-app')) this.foldRow(box);
+		});
+	},
+
+	/* runs again whenever LuCI touches the row's buttons, so it only
+	   writes what changed (a write would wake its own observer) */
+	foldRow(box) {
+		const btns = Array.prototype.filter.call(box.children, n =>
+			n.matches('button, .btn, .cbi-button, input[type="button"], input[type="submit"]') &&
+			!n.matches('.drag-handle, .vt-acts-more') && !n.hidden && n.style.display !== 'none');
+		const main = btns.find(b => b.matches('.cbi-button-edit')) || btns.find(b => b.matches('.important'));
+		const fold = main ? btns.filter(b => b !== main && !b.matches('.important, .cbi-button-add, .cbi-button-action')) : [];
+		if (!box._vtWatch && window.MutationObserver) {
+			/* LuCI's class, disabled, hidden and relabel changes are not
+			   childList ones: the body observer misses them */
+			box._vtWatch = new window.MutationObserver(recs => {
+				const m = box.querySelector(':scope > .vt-acts-more');
+				if (recs.some(r => !(m && m.contains(r.target)))) this.foldRow(box);
+			});
+			box._vtWatch.observe(box, { subtree: true, characterData: true, attributes: true, attributeFilter: [ 'class', 'disabled', 'hidden', 'style', 'title' ] });
+		}
+		let more = box.querySelector(':scope > .vt-acts-more');
+		const on = fold.length >= 2;
+		Array.prototype.forEach.call(box.children, c => c.classList.toggle('vt-acts-hidden', on && fold.includes(c)));
+		box.classList.toggle('vt-acts', on);
+		if (!on) {
+			if (more) {
+				/* focus on ⋯ or in its menu moves to the row's first action */
+				const had = more.contains(document.activeElement) || (this.actBtn === more && this.actMenu.contains(document.activeElement));
+				if (this.actBtn === more) this.closeActMenu(false);
+				more.remove();
+				if (had && btns[0]) btns[0].focus();
+			}
+			return;
+		}
+		if (!more) more = box.appendChild(this.moreButton(box));
+		/* LuCI spins and disables the hidden original while its action
+		   runs (ui.createHandlerFn, or the view itself): ⋯ shows the
+		   spinner until it settles, and stays usable for the others */
+		const busy = fold.some(b => b.classList.contains('spinning'));
+		if (more.classList.contains('spinning') !== busy) {
+			more.classList.toggle('spinning', busy);
+			if (busy) more.setAttribute('aria-busy', 'true');
+			else more.removeAttribute('aria-busy');
+		}
+		if (this.actBtn === more) this.fillActMenu(box, false);
+	},
+
+	moreButton(box) {
+		/* the shared menu exists from the first ⋯ on, so aria-controls names a real element */
+		this.actMenuEl();
+		const btn = E('button', {
+			'type': 'button', 'class': 'cbi-button cbi-button-neutral vt-acts-more',
+			'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'vt-actmenu',
+			'aria-label': _('More actions'), 'title': _('More actions')
+		}, [ svg('more', 18) ]);
+		btn.addEventListener('click', ev => {
+			ev.preventDefault();
+			if (this.actBtn === btn) this.closeActMenu(false);
+			else this.openActMenu(btn, box, ev.detail === 0, false);
+		});
+		btn.addEventListener('keydown', ev => {
+			if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+			ev.preventDefault();
+			this.openActMenu(btn, box, true, ev.key === 'ArrowUp');
+		});
+		return btn;
+	},
+
+	actMenuEl() {
+		if (this.actMenu) return this.actMenu;
+		const menu = E('div', { 'id': 'vt-actmenu', 'class': 'vt-actmenu', 'role': 'menu', 'aria-label': _('More actions'), 'hidden': 'hidden' });
+		menu.addEventListener('keydown', ev => {
+			const items = Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), n => !n.disabled);
+			const i = items.indexOf(document.activeElement);
+			if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); this.closeActMenu(true); }
+			/* back on ⋯ before the browser moves focus, so Tab goes on from
+			   the row, not from the menu at the end of the page */
+			else if (ev.key === 'Tab') this.closeActMenu(true);
+			else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp' || ev.key === 'Home' || ev.key === 'End') {
+				ev.preventDefault();
+				const n = items.length;
+				const to = ev.key === 'Home' ? 0 : ev.key === 'End' ? n - 1 : ev.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n;
+				if (items[to]) items[to].focus();
+			}
+		});
+		/* opened with the mouse or a tap, focus stays on ⋯ (or nowhere):
+		   Escape and Tab still close it. Capture, so a modal under it
+		   does not take the same Escape. */
+		document.addEventListener('keydown', ev => {
+			if (!this.actBtn || this.pal || menu.contains(ev.target)) return;
+			if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); this.closeActMenu(true); }
+			else if (ev.key === 'Tab') this.closeActMenu(false);
+		}, true);
+		document.addEventListener('pointerdown', ev => {
+			if (this.actBtn && !menu.contains(ev.target) && !this.actBtn.contains(ev.target)) this.closeActMenu(false);
+		}, true);
+		window.addEventListener('resize', () => this.closeActMenu(false));
+		/* the page scrolling away closes it; the menu's own scroll does not */
+		window.addEventListener('scroll', ev => { if (!menu.contains(ev.target)) this.closeActMenu(false); }, true);
+		document.body.appendChild(menu);
+		return (this.actMenu = menu);
+	},
+
+	/* one item per hidden original, with its current label, tooltip and
+	   disabled state. While open it is filled again when LuCI changes one
+	   (DDNS's poll disables Stop), but only then, since a refill is a
+	   childList change the body observer answers with another pass. */
+	fillActMenu(box, force) {
+		const menu = this.actMenuEl();
+		const origs = Array.prototype.slice.call(box.querySelectorAll(':scope > .vt-acts-hidden'));
+		const desc = origs.map(orig => {
+			const title = orig.getAttribute('title');
+			return {
+				orig, title,
+				label: (orig.tagName === 'INPUT' ? orig.value : orig.textContent.trim()) || title || orig.getAttribute('aria-label') || '',
+				danger: orig.matches('.cbi-button-remove, .cbi-button-negative, .remove'),
+				disabled: !!orig.disabled
+			};
+		});
+		const sig = JSON.stringify(desc.map(d => [ d.label, d.title, d.danger, d.disabled ]));
+		if (!force && sig === this.actSig && menu.children.length === origs.length &&
+		    Array.prototype.every.call(menu.children, (item, k) => item._vtOrig === origs[k])) return;
+		this.actSig = sig;
+		const had = menu.contains(document.activeElement) ? document.activeElement._vtOrig : null;
+		menu.textContent = '';
+		desc.forEach(d => {
+			const item = E('button', {
+				'type': 'button', 'role': 'menuitem', 'tabindex': '-1',
+				'class': 'vt-actmenu-item' + (d.danger ? ' is-danger' : ''),
+				'title': d.title || null,
+				'disabled': d.disabled ? 'disabled' : null
+			}, [ d.label ]);
+			item._vtOrig = d.orig;
+			item.addEventListener('click', () => {
+				this.closeActMenu(true);
+				d.orig.click();
+			});
+			menu.appendChild(item);
+		});
+		/* the focused item was replaced: focus its successor, or the first
+		   enabled one, so the arrow keys keep working */
+		if (had) {
+			const items = Array.prototype.filter.call(menu.children, n => !n.disabled);
+			const same = items.find(n => n._vtOrig === had);
+			if (same || items[0]) (same || items[0]).focus();
+			else this.closeActMenu(true);
+		}
+	},
+
+	openActMenu(btn, box, focusFirst, focusLast) {
+		this.closeActMenu(false);
+		const menu = this.actMenuEl();
+		this.fillActMenu(box, true);
+		menu.style.maxHeight = '';
+		menu.hidden = false;
+		/* below the button, or above it when the screen (or the phone's
+		   bottom bar) leaves no room; right edges aligned. When neither
+		   side fits (a landscape phone), the roomier one, scrolling, so
+		   the menu never covers its own button. */
+		const r = btn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
+		const rail = this.mqMobile && this.mqMobile.matches ? document.querySelector('.vt-rail') : null;
+		const floor = rail ? rail.getBoundingClientRect().top : window.innerHeight;
+		const below = floor - 8 - (r.bottom + 6), above = r.top - 6 - 8;
+		const down = h <= below || (h > above && below >= above);
+		const room = down ? below : above;
+		if (h > room) menu.style.maxHeight = Math.max(0, room).toFixed(0) + 'px';
+		const top = down ? r.bottom + 6 : r.top - 6 - Math.min(h, room);
+		const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+		menu.style.top = top.toFixed(0) + 'px';
+		menu.style.left = left.toFixed(0) + 'px';
+		btn.setAttribute('aria-expanded', 'true');
+		this.actBtn = btn;
+		if (focusFirst) {
+			const items = Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), n => !n.disabled);
+			const target = focusLast ? items[items.length - 1] : items[0];
+			if (target) target.focus();
+		}
+	},
+
+	closeActMenu(refocus) {
+		const btn = this.actBtn;
+		if (!btn) return;
+		this.actBtn = null;
+		if (this.actMenu) this.actMenu.hidden = true;
+		btn.setAttribute('aria-expanded', 'false');
+		if (refocus && btn.isConnected) btn.focus();
 	},
 
 	/* Help text shows its first line; (i) unfolds the rest. LuCI also puts
@@ -1412,7 +1714,7 @@ return baseclass.extend({
 		document.querySelectorAll('#maincontent > h2, #view h2, #view .cbi-section > h3:first-child').forEach(h => {
 			if (h.closest('.vt-app') || h.querySelector('a, button, input, select, [data-clickable], [tabindex]')) return;
 			const key = headingKey(h.textContent);
-			let repeat = this.trailKeys.has(key);
+			let repeat = repeatsTrail(key, h.tagName, this.trail);
 			if (!repeat && h.tagName === 'H3') {
 				const map = h.closest('.cbi-map');
 				const mapTitle = map && map.querySelector(':scope > h2');

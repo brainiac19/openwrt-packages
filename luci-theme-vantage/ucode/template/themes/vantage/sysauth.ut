@@ -49,7 +49,7 @@
 			</svg>
 			<div>
 				<h1 class="vt-login-title">{{ hostname }}</h1>
-				<p class="vt-login-sub"><span class="vt-live-dot" aria-hidden="true"></span>{{ entityencode(_('Authorization Required'), true) }}</p>
+				<p class="vt-login-sub"><span class="vt-login-dot" aria-hidden="true"></span>{{ entityencode(_('Authorization Required'), true) }}</p>
 			</div>
 		</div>
 

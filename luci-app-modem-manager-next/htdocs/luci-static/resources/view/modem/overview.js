@@ -58,18 +58,25 @@ return view.extend({
 		const self = this;
 		if (!self.selectedPort) {
 			ui.addNotification(null, E('p', {}, _('Please select a valid modem port first.')), 'error');
-			return;
+			return Promise.resolve();
 		}
 
 		ui.showModal(_('Executing Action'), [
 			E('p', { 'class': 'spinning' }, _('Sending action to cellular module, please wait...'))
 		]);
 
-		callDeviceAction(self.selectedPort, action).then(function(res) {
+		return callDeviceAction(self.selectedPort, action).then(function(res) {
 			ui.hideModal();
 			if (res && res.success) {
-				ui.addNotification(null, E('p', {}, _('Action executed successfully.')), 'info');
-				self.forceRefresh();
+				if (action === 'reboot') {
+					ui.addNotification(null, E('p', {}, _('Modem reboot signal sent successfully. The module is rebooting, cellular network will reinitialize in 15-30 seconds.')), 'info');
+					window.setTimeout(function() {
+						self.forceRefresh();
+					}, 20000);
+				} else {
+					ui.addNotification(null, E('p', {}, _('Action executed successfully.')), 'info');
+					self.forceRefresh();
+				}
 			} else {
 				ui.addNotification(null, E('p', {}, _('Action failed: ') + (res ? res.output : _('Unknown error'))), 'error');
 			}
@@ -81,18 +88,33 @@ return view.extend({
 
 	forceRefresh: function() {
 		const self = this;
-		if (!self.selectedPort) return;
-		return callRefreshStatus(self.selectedPort, self.selectedNet).then(function(res) {
-			self.applyStatusDOM(res);
+		return callGetDevices().then(function(devRes) {
+			const devs = Array.isArray(devRes) ? devRes : ((devRes && Array.isArray(devRes.devices)) ? devRes.devices : []);
+			if (devs.length > 0) {
+				self.selectedPort = devs[0].primary_port;
+				self.selectedNet = devs[0].primary_net;
+			}
+			if (!self.selectedPort) return;
+			return callRefreshStatus(self.selectedPort, self.selectedNet).then(function(res) {
+				if (res && res.port && res.port !== self.selectedPort) {
+					self.selectedPort = res.port;
+				}
+				self.applyStatusDOM(res);
+			});
+		}).catch(function(err) {
+			if (!self.selectedPort) return;
+			return callRefreshStatus(self.selectedPort, self.selectedNet).then(function(res) {
+				self.applyStatusDOM(res);
+			});
 		});
 	},
 
 	updateStatus: function() {
 		const self = this;
-		if (!self.selectedPort)
-			return Promise.resolve();
-
 		return callGetStatus(self.selectedPort, self.selectedNet).then(function(res) {
+			if (res && res.port && res.port !== self.selectedPort) {
+				self.selectedPort = res.port;
+			}
 			self.applyStatusDOM(res);
 		}).catch(function(e) {});
 	},

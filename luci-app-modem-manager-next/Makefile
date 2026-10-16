@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-modem-manager-next
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=Dante <dante@seckv.com>
@@ -12,8 +12,7 @@ LUCI_DESCRIPTION:=Provides a modern LuCI Web management interface for 4G/5G cell
 PKG_DESCRIPTION:=Provides a modern LuCI Web management interface for 4G/5G cellular modems.
 LUCI_DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-ubus +ucode-mod-uci \
 	+kmod-usb-net +kmod-usb-serial +kmod-usb-serial-option \
-	+kmod-usb-net-cdc-ncm +kmod-usb-net-cdc-mbim +kmod-usb-net-cdc-ether +kmod-usb-net-qmi-wwan \
-	+umbim +uqmi +sms-tool
+	+kmod-usb-net-cdc-ncm +kmod-usb-net-cdc-ether +sms-tool
 LUCI_PKGARCH:=all
 
 include $(TOPDIR)/feeds/luci/luci.mk

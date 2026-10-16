@@ -594,7 +594,14 @@ maybe_snapshot_wan_log_baseline() {
 	else
 		current=$(wan_zone_log_value "$zone")
 	fi
-	printf '%s' "$current" >"$path" 2>/dev/null || return 1
+	# Redirection truncates before the write. If the write fails, drop the
+	# partial marker so the next call re-snapshots instead of treating an
+	# empty file as a valid "unset" baseline. A kill between open and write
+	# remains an accepted residual.
+	if ! printf '%s' "$current" >"$path" 2>/dev/null; then
+		rm -f "$path"
+		return 1
+	fi
 	return 0
 }
 
@@ -610,8 +617,13 @@ maybe_snapshot_wan_log_baseline() {
 restore_wan_log_baseline() {
 	path="$(wan_log_baseline_path)"
 	[ -f "$path" ] || return 0
-	# Empty file is a valid "option was unset" baseline.
-	baseline=$(cat "$path" 2>/dev/null || true)
+	# Empty file is a valid "option was unset" baseline. A failed read
+	# must not become that empty value: restore would then delete the
+	# WAN log option and retire the only recovery marker.
+	if ! baseline=$(cat "$path" 2>/dev/null); then
+		logger -t fwlive "WAN log baseline restore skipped: baseline read failed" 2>/dev/null || true
+		return 1
+	fi
 	find_wan_zone_section_state
 	zone=$WAN_ZONE_FOUND
 	if [ -z "$zone" ]; then

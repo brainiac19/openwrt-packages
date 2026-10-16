@@ -176,18 +176,16 @@ const DENY_ACTION_UNDERSCORE = new RegExp(
 	'(?:^|[^A-Za-z0-9])(?:' + DENY_CLASS_WORDS.join('|') + ')(?:[^A-Za-z0-9]|$)',
 	'i'
 );
-const NETFILTER_KV_GLUE = new RegExp(
-	'([^\\s])(?=(' + CLASSIFY_SPEC.glueKeys.join('|') + ')=)',
-	'g'
-);
+const NETFILTER_KV_GLUE = new RegExp('(' + CLASSIFY_SPEC.glueKeys.join('|') + ')=');
 
 return baseclass.extend({
 	CLASSIFY_SPEC: CLASSIFY_SPEC,
 	validateClassifySpec: validateClassifySpec,
 
 	TCP_FLAG_TAIL:
-		/\b((?:SYN|ACK|FIN|RST|PSH|URG|ECE|CWR)(?:\s+(?:SYN|ACK|FIN|RST|PSH|URG|ECE|CWR))*)(?:\s+[A-Z][A-Z0-9_]*=[^\s]+)*\s*$/i,
+		/(?:^|\s)((?:SYN|ACK|FIN|RST|PSH|URG|ECE|CWR)(?:\s+(?:SYN|ACK|FIN|RST|PSH|URG|ECE|CWR))*)(?:\s+OPT\s+\([^)]*\))?\s*$/i,
 	NETFILTER_KV_GLUE: NETFILTER_KV_GLUE,
+	KV_SPAN: /\b[A-Z][A-Z0-9_]*=[^\s]+/g,
 
 	kvHas: function (msg, key) {
 		if (typeof key === 'string' && Object.prototype.hasOwnProperty.call(KV_HAS_PATTERNS, key)) {
@@ -207,7 +205,13 @@ return baseclass.extend({
 
 	normalizeNetfilterMessage: function (message) {
 		if (typeof message !== 'string') message = '';
-		return message.replace(this.NETFILTER_KV_GLUE, '$1 ');
+		const match = this.NETFILTER_KV_GLUE.exec(message);
+		if (!match) return message;
+		const idx = match.index;
+		if (idx === 0) return message;
+		const prev = message.charAt(idx - 1);
+		if (/\s/.test(prev)) return message;
+		return message.slice(0, idx) + ' ' + message.slice(idx);
 	},
 
 	parseKeyValueLog: function (message) {
@@ -216,13 +220,19 @@ return baseclass.extend({
 		const normalized = this.normalizeNetfilterMessage(message);
 		let match;
 
-		while ((match = re.exec(normalized)) !== null) out[match[1]] = match[2];
+		while ((match = re.exec(normalized)) !== null) {
+			if (out[match[1]] === undefined) out[match[1]] = match[2];
+		}
 
 		return out;
 	},
 
+	stripKvSpans: function (message) {
+		return String(message).replace(this.KV_SPAN, '');
+	},
+
 	detectAction: function (message) {
-		const m = message.match(this.ACTION_RE);
+		const m = this.stripKvSpans(message).match(this.ACTION_RE);
 		return m ? m[2].toUpperCase() : 'UNKNOWN';
 	},
 
@@ -320,18 +330,8 @@ return baseclass.extend({
 		return hint.replace(/-/g, ' ');
 	},
 
-	inferActionRaw: function (message, kv, actionRaw) {
+	inferActionRaw: function (_message, _kv, actionRaw) {
 		if (actionRaw && actionRaw !== 'UNKNOWN') return actionRaw;
-
-		const msg = this.normalizeNetfilterMessage(message || '');
-		const withoutKv = msg.replace(/\b[A-Z]+=[^\s]*/g, ' ');
-		if (this.DENY_ACTION.test(withoutKv) || this.DENY_ACTION_UNDERSCORE.test(withoutKv))
-			return 'UNKNOWN';
-
-		if (/^kernel:/i.test(msg.trim())) return 'UNKNOWN';
-
-		const hasTuple = !!(kv.IN || kv.OUT) && !!(kv.SRC || kv.DST || kv.PROTO);
-		if (hasTuple) return 'PASS';
 
 		return 'UNKNOWN';
 	},
@@ -340,7 +340,7 @@ return baseclass.extend({
 		if (kv.TCPFLAGS) return kv.TCPFLAGS;
 		if (kv.FLAGS) return kv.FLAGS;
 
-		const m = message.match(this.TCP_FLAG_TAIL);
+		const m = this.stripKvSpans(message).match(this.TCP_FLAG_TAIL);
 		if (!m) return '';
 
 		return m[1].trim().toUpperCase().replace(/\s+/g, ',');

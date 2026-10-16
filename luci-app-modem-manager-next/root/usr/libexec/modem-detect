@@ -116,6 +116,19 @@ detect_all() {
 		local PROD=$(get_sys_attr "$dev/product")
 		local SER=$(get_sys_attr "$dev/serial")
 
+		local DRIVER="option"
+		for net_iface in $NETS; do
+			if [ -e "/sys/class/net/$net_iface/device/driver" ]; then
+				local drv_target=$(basename "$(readlink -f "/sys/class/net/$net_iface/device/driver" 2>/dev/null)")
+				case "$drv_target" in
+					cdc_ncm|cdc_ether|cdc_mbim|qmi_wwan)
+						DRIVER="$drv_target"
+						break
+						;;
+				esac
+			fi
+		done
+
 		local PRIMARY_TTY=""
 		for t in $TTYS; do
 			case "$t" in
@@ -125,19 +138,18 @@ detect_all() {
 					;;
 			esac
 		done
+		if [ -z "$PRIMARY_TTY" ]; then
+			for t in $TTYS; do
+				case "$t" in
+					*ttyUSB3)
+						PRIMARY_TTY="$t"
+						break
+						;;
+				esac
+			done
+		fi
 		[ -z "$PRIMARY_TTY" ] && PRIMARY_TTY=$(echo "$TTYS" | awk '{print $1}')
 		local PRIMARY_NET=$(echo "$NETS" | awk '{print $1}')
-
-		local DRIVER="option"
-		for drv in $(find "$dev" -name "driver" 2>/dev/null); do
-			local drv_target=$(basename "$(readlink -f "$drv" 2>/dev/null)")
-			case "$drv_target" in
-				cdc_mbim|cdc_ncm|qmi_wwan|cdc_ether|rndis_host)
-					DRIVER="$drv_target"
-					break
-					;;
-			esac
-		done
 
 		[ $FIRST -eq 1 ] || echo ","
 		FIRST=0
@@ -154,6 +166,8 @@ detect_all() {
 			NET_JSON="$NET_JSON\"$n\""
 		done
 
+		local MODES_JSON="\"ncm\", \"ecm\""
+
 		cat <<EOF
     {
       "id": "$DEVNAME",
@@ -165,6 +179,7 @@ detect_all() {
       "driver": "$DRIVER",
       "primary_port": "$PRIMARY_TTY",
       "primary_net": "$PRIMARY_NET",
+      "supported_modes": [ $MODES_JSON ],
       "ports": [ $TTY_JSON ],
       "nets": [ $NET_JSON ]
     }

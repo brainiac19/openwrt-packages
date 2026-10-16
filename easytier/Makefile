@@ -2,8 +2,8 @@ include $(TOPDIR)/rules.mk
 -include $(dir $(lastword $(MAKEFILE_LIST)))../version.mk
 
 PKG_NAME:=easytier
-PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)
-PKG_RELEASE:=4
+PKG_VERSION:=$(or $(EASYTIER_VERSION),2.7.0)
+PKG_RELEASE:=5
 
 ifeq ($(ARCH),mipsel)
 	APP_ARCH:=mipsel

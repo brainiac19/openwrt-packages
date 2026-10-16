@@ -5,13 +5,20 @@
 # source: core/fwlive-log.js CLASSIFY_SPEC
 # Standalone awk program loaded by fwlive-is-firewall-event.sh.
 
-function normalize(s, keys, n, i, k) {
+function normalize(s, keys, n, i, k, best, pos) {
+	# Glue only at the first KEY=. Exact-case glueKeys.
 	n = split("IN OUT SRC DST PROTO SPT DPT LEN MAC TYPE CODE TTL TOS PREC DF", keys, " ")
+	best = 0
 	for (i = 1; i <= n; i++) {
 		k = keys[i]
-		while (match(s, "[^[:space:]]" k "="))
-			s = substr(s, 1, RSTART) " " substr(s, RSTART + 1)
+		if (match(s, k "=")) {
+			pos = RSTART
+			if (best == 0 || pos < best)
+				best = pos
+		}
 	}
+	if (best > 1 && substr(s, best - 1, 1) !~ /[[:space:]]/)
+		s = substr(s, 1, best - 1) " " substr(s, best)
 	return s
 }
 function trim(s) {
@@ -30,7 +37,25 @@ function non_fw_prefix(s, lc) {
 	lc = tolower(s)
 	return lc ~ "^(dnsmasq|procd|ubusd|netifd|odhcpd|logd|dropbear|uhttpd|hostapd|wpad)([^a-z0-9_-]|$)"
 }
+function strip_kv(s, out, i, n, prev, rest) {
+	# Same boundary as JS /\b[A-Z][A-Z0-9_]*=/. tagX=DROP keeps DROP.
+	out = ""
+	i = 1
+	n = length(s)
+	while (i <= n) {
+		prev = (i == 1) ? "" : substr(s, i - 1, 1)
+		rest = substr(s, i)
+		if ((prev == "" || prev !~ /[A-Za-z0-9_]/) && match(rest, /^[A-Z][A-Z0-9_]*=[^[:space:]]+/)) {
+			i += RLENGTH
+			continue
+		}
+		out = out substr(s, i, 1)
+		i++
+	}
+	return out
+}
 function detect_action(s, words, n, i, w, wl, lc, start, pos, before, afterc, best, bestpos) {
+	s = strip_kv(s)
 	n = split("ACCEPT ALLOW PASS DROP REJECT DENY BLOCK", words, " ")
 	lc = tolower(s)
 	best = ""
@@ -100,9 +125,11 @@ function json_get_msg(obj, s, i, c, esc, out, hex, n) {
 }
 function is_fw(s, action) {
 	s = trim(normalize(s))
+	fw_norm = s
 	if (s == "") return 0
 	if (non_fw_prefix(s)) return 0
 	action = detect_action(s)
+	fw_action = action
 	if (((has_kv(s, "SRC") && has_kv(s, "DST")) || ((has_kv(s, "IN") || has_kv(s, "OUT")) && (has_kv(s, "SRC") || has_kv(s, "DST") || has_kv(s, "PROTO") || has_kv(s, "SPT") || has_kv(s, "DPT"))) || (action != "UNKNOWN" && (has_kv(s, "IN") || has_kv(s, "OUT") || has_kv(s, "PROTO") || has_kv(s, "SRC") || has_kv(s, "DST"))))) return 1
 	if ((has_hint(s) && action != "UNKNOWN")) return 1
 	if ((has_hint(s) && (has_kv(s, "IN") || has_kv(s, "OUT") || has_kv(s, "SRC") || has_kv(s, "DST") || has_kv(s, "PROTO")))) return 1
@@ -124,14 +151,14 @@ function utf8_prefix(s, max_bytes, out, i, c, width) {
 	return out
 }
 function summary_kv(s, key, part) {
-	s = normalize(s)
+	s = fw_norm
 	if (!match(s, "(^|[[:space:]])" key "=[^[:space:]]+")) return ""
 	part = substr(s, RSTART, RLENGTH)
 	sub(/^[^=]*=/, "", part)
 	return part
 }
 function summary_rule(s, first) {
-	s = trim(normalize(s))
+	s = fw_norm
 	sub(/^\[[[:space:]]*[0-9.]+\][[:space:]]*/, "", s)
 	if (tolower(s) ~ /^fw4:[[:space:]]*/) return "fw4"
 	# Shared with parseRuleHint: token then IN=/OUT=/SRC=/DST=/PROTO=, else colon tag.
@@ -182,7 +209,7 @@ function summary_top(counts, limit, out, i, k, best, best_n) {
 }
 function summary_add(s, action, src, dst, rule) {
 	summary_count++
-	action = tolower(detect_action(normalize(s)))
+	action = tolower(fw_action)
 	if (action == "drop" || action == "reject" || action == "deny" || action == "block") summary_add_count(summary_drop_counts, action)
 	src = summary_kv(s, "SRC")
 	if (src == "") src = summary_kv(s, "DST")

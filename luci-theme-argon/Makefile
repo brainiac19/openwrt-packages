@@ -11,8 +11,18 @@ LUCI_DEPENDS:=+luci-base +USE_APK:wget-any +!USE_APK:wget +jsonfilter +ucode-mod
 # Keep existing translation package names and the argon-config message domain.
 LUCI_BASENAME:=argon-config
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=17
+PKG_RELEASE:=18
 PKG_LICENSE:=Apache-2.0 MIT
+
+# LuCI derives translations independently of the theme version. Keep release
+# builds deterministic even when the package directory has no Git history.
+ifneq ($(CONFIG_USE_APK),)
+PKG_PO_VERSION:=$(PKG_VERSION)-r$(PKG_RELEASE)
+else
+# The v3.0.0 IPKs shipped as "unknown", which sorts above numeric versions.
+# Keep this prefix for future IPK translations so a normal install upgrades it.
+PKG_PO_VERSION:=v$(PKG_VERSION)
+endif
 
 CONFIG_LUCI_CSSTIDY:=
 # Ship template source across stable and snapshot runtimes. Precompiled

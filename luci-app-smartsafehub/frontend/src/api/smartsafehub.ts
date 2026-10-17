@@ -28,6 +28,7 @@ import type {
   SoftwareUpdateStatus,
 } from '../types/updates';
 import type {
+  WifiQrCredentials,
   GuestWifiSummary,
   GuestWifiUpdateInput,
   GuestWifiUpdateResult,
@@ -85,6 +86,15 @@ export interface DeviceRegistrationStatus {
   pairingExpiresAt: string | null;
   nextSyncAt: number;
   lastSuccessAt: number;
+}
+
+export interface RecommendedRulesStatus {
+  revision: string | null;
+  domains: string[];
+}
+
+export function fetchRecommendedRulesStatus(): Promise<RecommendedRulesStatus> {
+  return callApi(API_OBJECT, 'device_recommended_rules_status', {}, { timeoutMs: 5000 });
 }
 
 export function fetchDeviceRegistrationStatus(): Promise<DeviceRegistrationStatus> {
@@ -309,11 +319,7 @@ export function updateIptvSettings(
   );
 }
 
-export interface WifiQrCredentials {
-  ssid: string;
-  security: 'none' | 'psk2' | 'sae' | 'sae-mixed';
-  password: string;
-}
+export type { WifiQrCredentials } from '../types/wifi';
 
 export function fetchWifiQr(section: string): Promise<WifiQrCredentials> {
   return callApi(API_OBJECT, 'wifi_qr', { section }, { timeoutMs: 8000 });

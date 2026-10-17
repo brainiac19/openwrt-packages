@@ -1,7 +1,7 @@
 {
   "name": "luci-app-smartsafehub-frontend",
   "private": true,
-  "version": "0.2.28",
+  "version": "0.2.29",
   "type": "module",
   "engines": {
     "node": ">=24.0"
@@ -10,6 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
+    "build:demo": "npm run typecheck && vite build --config vite.demo.config.ts",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

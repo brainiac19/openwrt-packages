@@ -28,6 +28,13 @@ Describe 'SmartSafeHub 셸 계약 테스트'
     The output should start with 'PASS:'
     The error should be blank
   End
+  It '공유기 데모의 실제 기기 접근 차단과 Git 배포 계약을 검증한다'
+    When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-router-demo-contract.sh"
+    The status should be success
+    The output should start with 'PASS: router demo contract'
+    The error should be blank
+  End
+
   It '게스트 Wi-Fi 분리망과 관리 UI 보안 계약을 검증한다'
     When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-guest-wifi-contract.sh"
     The status should be success
@@ -53,6 +60,13 @@ Describe 'SmartSafeHub 셸 계약 테스트'
     When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-activity-ui-contract.sh"
     The status should be success
     The output should start with 'PASS:'
+    The error should be blank
+  End
+
+  It '추천 사용자 규칙의 적용과 해제 및 수동 규칙 보존을 검증한다'
+    When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-recommended-rules.sh"
+    The status should be success
+    The output should start with '추천 사용자 규칙 동기화 및 UI 계약: PASS'
     The error should be blank
   End
 
@@ -184,6 +198,13 @@ Describe 'SmartSafeHub 셸 계약 테스트'
 
   It 'SKB/LG U+ IPTV Beta 계약을 검증한다'
     When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-iptv.sh"
+    The status should be success
+    The output should start with 'PASS:'
+    The error should be blank
+  End
+
+  It '업데이트 및 SafeShield 상대 시간 표시 계약을 검증한다'
+    When run command sh "$SHELLSPEC_PROJECT_ROOT/tests/test-relative-time-contract.sh"
     The status should be success
     The output should start with 'PASS:'
     The error should be blank

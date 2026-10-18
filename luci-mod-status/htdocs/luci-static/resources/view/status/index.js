@@ -28,6 +28,9 @@ return view.extend({
 					this._include = include;
 					this._loading = null;
 
+					if (include != null)
+						this.disableCache = include.disableCache;
+
 					if (include != null && include.title != null)
 						this.title = include.title;
 
@@ -150,16 +153,20 @@ return view.extend({
 		if (include.hide && !first_load)
 			return Promise.resolve(null);
 
-		if (!include.hide && !container.hasAttribute('data-cached'))
+		if (include._pendingLoad)
+			return include._pendingLoad;
+
+		if (first_load && !include.hide && !container.hasAttribute('data-cached'))
 			this.renderIncludePlaceholder(container);
 
 		if (typeof(include.load) == 'function') {
-			return include.load().then(L.bind(function(result) {
+			include._pendingLoad = Promise.resolve().then(function() { return include.load(); }).then(L.bind(function(result) {
 				this.applyIncludeResult(include, container, result, first_load);
 				return result;
 			}, this)).catch(function() {
 				return null;
-			});
+			}).finally(function() { include._pendingLoad = null; });
+			return include._pendingLoad;
 		}
 
 		this.applyIncludeResult(include, container, null, first_load);
@@ -188,43 +195,13 @@ return view.extend({
 		}
 	},
 
-	invokeIncludesLoad: function(includes, first_load) {
-		var tasks = [];
-
-		for (var i = 0; i < includes.length; i++) {
-			if (includes[i].hide && !first_load) {
-				tasks.push(Promise.resolve(null));
-				continue;
-			}
-
-			if (typeof(includes[i].load) == 'function') {
-				tasks.push(Promise.resolve(includes[i].load()).catch(function() {
-					return null;
-				}));
-			}
-			else {
-				tasks.push(Promise.resolve(null));
-			}
-		}
-
-		return Promise.all(tasks);
-	},
-
 	poll_status: function(includes, containers, first_load) {
 		var fetch = first_load ? Promise.resolve(null) : network.flushCache();
 
-		return fetch.then(L.bind(
-			this.invokeIncludesLoad, this, includes, first_load
-		)).then(L.bind(function(results) {
-			for (var i = 0; i < includes.length; i++) {
-				this.applyIncludeResult(includes[i], containers[i], results ? results[i] : null, first_load);
-			}
-
-			var ssi = document.querySelector('div.includes');
-			if (ssi) {
-				ssi.style.display = '';
-				ssi.classList.add('fade-in');
-			}
+		return fetch.then(L.bind(function() {
+			// Slow wireless queries must not hold up other cards or their next poll.
+			this.loadIncludeGroup(includes, containers, true, first_load);
+			return this.loadIncludeGroup(includes, containers, false, first_load);
 		}, this));
 	},
 
@@ -279,14 +256,26 @@ return view.extend({
 	},
 
 	load: function() {
-		return L.resolveDefault(fs.list('/www' + L.resource('view/status/include')), []).then(function(entries) {
-			return Promise.all(entries.filter(function(e) {
-				return (e.type == 'file' && e.name.match(/\.js$/));
-			}).map(function(e) {
-				return 'view.status.include.' + e.name.replace(/\.js$/, '');
-			}).sort().map(function(n) {
-				return L.require(n);
-			}));
+		var includeModules = [
+			{ name: 'view.status.include.10_system' },
+			{ name: 'view.status.include.15_ports', title: _('Port status'), deferFirstLoad: true },
+			{ name: 'view.status.include.20_memory' },
+			{ name: 'view.status.include.25_storage' },
+			{ name: 'view.status.include.30_network' },
+			{ name: 'view.status.include.40_dhcp', title: _('Online Hosts'), deferFirstLoad: true },
+			{ name: 'view.status.include.50_dsl' },
+			{ name: 'view.status.include.60_wifi', title: _('Wireless'), deferFirstLoad: true }
+		];
+
+		return Promise.all(includeModules.map(L.bind(function(spec) {
+			if (spec.deferFirstLoad)
+				return this.wrapDeferredInclude(spec);
+
+			return L.resolveDefault(L.require(spec.name), null);
+		}, this))).then(function(includes) {
+			return includes.filter(function(include) {
+				return include != null;
+			});
 		});
 	},
 

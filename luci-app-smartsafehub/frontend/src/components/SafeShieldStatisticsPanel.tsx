@@ -1,3 +1,4 @@
+import { SectionHeading } from './SectionHeading';
 import { formatNumber, formatTimestamp } from '../app/format';
 import type { SafeShieldAction } from '../hooks/useSafeShieldActions';
 import type {
@@ -69,7 +70,7 @@ function Metric({
   value: string;
 }) {
   return (
-    <div class="rounded-xl border border-slate-100 bg-slate-50 p-4 sm:p-5">
+    <div class="rounded-xl bg-slate-50 p-4 sm:p-5">
       <dt class="text-[0.68rem] font-black uppercase tracking-[0.12em] text-slate-400">
         {label}
       </dt>
@@ -95,17 +96,22 @@ export function SafeShieldStatisticsPanel({
 }: SafeShieldStatisticsPanelProps) {
   if (loading && data === null) {
     return (
-      <section class="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6">
+      <>
+        <SectionHeading eyebrow="Activity" title="최근 24시간 보호 활동" description="DNS 요청과 차단 현황을 확인합니다." />
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6">
         <p class="m-0 text-sm font-bold text-slate-500">
           차단 통계를 불러오는 중입니다…
         </p>
       </section>
+      </>
     );
   }
 
   if (error && data === null) {
     return (
-      <section class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
+      <>
+        <SectionHeading eyebrow="Activity" title="최근 24시간 보호 활동" description="DNS 요청과 차단 현황을 확인합니다." />
+      <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
         <p class="m-0 text-sm font-extrabold text-amber-950">
           차단 통계를 불러오지 못했습니다.
         </p>
@@ -118,22 +124,20 @@ export function SafeShieldStatisticsPanel({
           다시 시도
         </button>
       </section>
+      </>
     );
   }
 
   if (!data) {
     return (
-      <section class="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6">
-        <p class="m-0 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-          Activity
-        </p>
-        <h2 class="mt-3 mb-0 text-xl font-extrabold text-slate-950">
-          보호 활동
-        </h2>
-        <p class="mt-3 mb-0 text-sm leading-6 text-slate-600">
-          현재 SafeShield에서 통계 데이터를 제공하지 않습니다. SafeShield 0.3.15 버전 이상이 설치되어 있고, 통계 수집이 활성화되어 있는지 확인해 주세요.
-        </p>
-      </section>
+      <>
+        <SectionHeading eyebrow="Activity" title="최근 24시간 보호 활동" description="DNS 요청과 차단 현황을 확인합니다." />
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6">
+          <p class="m-0 text-sm leading-6 text-slate-600">
+            현재 SafeShield에서 통계 데이터를 제공하지 않습니다. SafeShield 0.3.15 버전 이상이 설치되어 있고, 통계 수집이 활성화되어 있는지 확인해 주세요.
+          </p>
+        </section>
+      </>
     );
   }
 
@@ -165,76 +169,69 @@ export function SafeShieldStatisticsPanel({
       : '비활성화';
 
   return (
+    <>
+      <SectionHeading
+        action={
+          <div class="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">
+              <DatabaseIcon class="size-5" />
+            </span>
+            <div class="text-right">
+              <p class="m-0 text-[0.68rem] font-bold text-slate-400">통계 수집</p>
+              <p
+                class={`mt-1 mb-0 text-xs font-extrabold ${
+                  statisticsActionBusy || targetEnabled
+                    ? 'text-emerald-700'
+                    : 'text-slate-500'
+                }`}
+                role="status"
+              >
+                {collectionStatus}
+              </p>
+            </div>
+            <button
+              aria-checked={targetEnabled}
+              aria-label={targetEnabled ? '차단 통계 수집 끄기' : '차단 통계 수집 켜기'}
+              class={`ssh-switch-control relative inline-flex shrink-0 items-center rounded-full border-0 p-0 transition focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-100 ${
+                statisticsActionBusy
+                  ? 'cursor-wait opacity-80'
+                  : 'disabled:cursor-not-allowed disabled:opacity-50'
+              } ${targetEnabled ? 'bg-teal-600' : 'bg-slate-300'}`}
+              disabled={action !== null}
+              onClick={() => onSetEnabled(!data.enabled)}
+              role="switch"
+              type="button"
+            >
+              <span
+                aria-hidden="true"
+                class={`ssh-switch-thumb absolute top-1 grid place-items-center shadow-sm transition-all ${
+                  targetEnabled ? 'left-6' : 'left-1'
+                }`}
+              >
+                {statisticsActionBusy ? (
+                  <ReloadIcon aria-hidden="true" class="size-3 animate-spin text-teal-600" />
+                ) : null}
+              </span>
+            </button>
+          </div>
+        }
+        eyebrow="Activity"
+        title="최근 24시간 보호 활동"
+        description="DNS 요청 원본은 저장하지 않고 숫자만 로컬 메모리에 집계합니다."
+      />
     <section
       aria-busy={statisticsActionBusy}
-      class={`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6 ${
+      class={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5 sm:p-6 ${
         statisticsActionBusy ? 'cursor-wait' : ''
       }`}
     >
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p class="m-0 text-[0.68rem] font-black uppercase tracking-[0.18em] text-teal-700">
-            Activity
-          </p>
-          <h2 class="mt-2 mb-0 text-xl font-black tracking-tight text-slate-950">
-            최근 24시간 보호 활동
-          </h2>
-          <p class="mt-2 mb-0 text-sm leading-6 text-slate-500">
-            DNS 요청 원본은 저장하지 않고 숫자만 로컬 메모리에 집계합니다.
-          </p>
-        </div>
-
-        <div class="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-          <span class="grid size-9 place-items-center rounded-lg bg-slate-100 text-slate-500">
-            <DatabaseIcon class="size-5" />
-          </span>
-          <div class="text-right">
-            <p class="m-0 text-[0.68rem] font-bold text-slate-400">통계 수집</p>
-            <p
-              class={`mt-1 mb-0 text-xs font-extrabold ${
-                statisticsActionBusy || targetEnabled
-                  ? 'text-emerald-700'
-                  : 'text-slate-500'
-              }`}
-              role="status"
-            >
-              {collectionStatus}
-            </p>
-          </div>
-          <button
-            aria-checked={targetEnabled}
-            aria-label={targetEnabled ? '차단 통계 수집 끄기' : '차단 통계 수집 켜기'}
-            class={`ssh-switch-control relative inline-flex shrink-0 items-center rounded-full border-0 p-0 transition focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-100 ${
-              statisticsActionBusy
-                ? 'cursor-wait opacity-80'
-                : 'disabled:cursor-not-allowed disabled:opacity-50'
-            } ${targetEnabled ? 'bg-teal-600' : 'bg-slate-300'}`}
-            disabled={action !== null}
-            onClick={() => onSetEnabled(!data.enabled)}
-            role="switch"
-            type="button"
-          >
-            <span
-              aria-hidden="true"
-              class={`ssh-switch-thumb absolute top-1 grid place-items-center shadow-sm transition-all ${
-                targetEnabled ? 'left-6' : 'left-1'
-              }`}
-            >
-              {statisticsActionBusy ? (
-                <ReloadIcon aria-hidden="true" class="size-3 animate-spin text-teal-600" />
-              ) : null}
-            </span>
-          </button>
-        </div>
-      </div>
-
       {!data.enabled ? (
-        <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+        <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
           통계 수집이 꺼져 있습니다. 활성화하면 DNS 요청 원본은 저장하지 않고 요청 수와 차단 수만 로컬 메모리에 집계합니다.
         </div>
       ) : null}
 
-      <dl class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <dl class="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="최근 24시간 DNS 요청" value={formatNumber(recentTotals.queries)} />
         <Metric
           emphasized
@@ -248,7 +245,7 @@ export function SafeShieldStatisticsPanel({
         <Metric label="현재 시간 차단" value={formatNumber(latest?.blocked ?? 0)} />
       </dl>
 
-      <div class="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+      <div class="mt-5 rounded-xl bg-slate-50/70 p-4 sm:p-5">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p class="m-0 text-xs font-bold text-slate-500">최근 24시간</p>
@@ -286,5 +283,6 @@ export function SafeShieldStatisticsPanel({
         </p>
       ) : null}
     </section>
+    </>
   );
 }

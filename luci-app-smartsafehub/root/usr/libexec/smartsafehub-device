@@ -16,6 +16,10 @@ CREDENTIAL_FILE="${SMARTSAFEHUB_DEVICE_CREDENTIAL_FILE:-/etc/smartsafehub/device
 ACTIVITY_CREDENTIAL_FILE="${SMARTSAFEHUB_ACTIVITY_CREDENTIAL_FILE:-$RUNTIME_DIR/activity-sync-credential.json}"
 RECOMMENDED_HELPER="${SMARTSAFEHUB_RECOMMENDED_HELPER:-/usr/libexec/smartsafehub-recommended-rules}"
 RECOMMENDED_RECEIPT="${SMARTSAFEHUB_RECOMMENDED_RECEIPT_FILE:-$RUNTIME_DIR/recommended-rules.receipt.json}"
+RECOMMENDED_STATE="${SMARTSAFEHUB_RECOMMENDED_STATE_FILE:-/etc/smartsafehub/recommended-rules.state}"
+RECOMMENDED_SYNC_STATUS="${SMARTSAFEHUB_RECOMMENDED_SYNC_STATUS_FILE:-$RUNTIME_DIR/recommended-rules.sync.json}"
+RECOMMENDED_CATALOG="${SMARTSAFEHUB_RECOMMENDED_CATALOG_FILE:-$RUNTIME_DIR/recommended-rules.catalog.json}"
+RECOMMENDED_ACK_STATE="${SMARTSAFEHUB_RECOMMENDED_ACK_STATE_FILE:-$RUNTIME_DIR/recommended-rules.reported}"
 API_BASE_URL="${SMARTSAFEHUB_DEVICE_API_BASE_URL:-https://www.smartsafehub.com/api/v1}"
 UCLIENT_FETCH_BIN="${SMARTSAFEHUB_DEVICE_UCLIENT_FETCH_BIN:-uclient-fetch}"
 JSONFILTER_BIN="${SMARTSAFEHUB_DEVICE_JSONFILTER_BIN:-jsonfilter}"
@@ -26,6 +30,8 @@ HEXDUMP_BIN="${SMARTSAFEHUB_DEVICE_HEXDUMP_BIN:-hexdump}"
 UBUS_BIN="${SMARTSAFEHUB_DEVICE_UBUS_BIN:-ubus}"
 REQUEST_TIMEOUT_S=10
 CHECK_INTERVAL_S=300
+RECOMMENDED_POLL_INTERVAL_S=30
+RECOMMENDED_POLL_MAX_RETRY_S=300
 STARTUP_DELAY_S=35
 MAX_RETRY_S=3600
 STOP_REQUESTED=0
@@ -205,6 +211,36 @@ rotate_credential_if_due() {
  rm -f "$body" "$out"
 }
 
+# Keep the latest reconciliation outcome in tmpfs, not flash. A successful
+# device/account sync does not imply SafeShield accepted the recommended rules.
+# Status is volatile. Keep the most recent confirmed receipt separately so a
+# transient Hub failure never becomes an unverified SafeShield failure.
+write_recommended_sync_status() {
+ local result="$1" stage="${2:-$1}" reason="${3:-}" now tmp
+ now="$(now_epoch)"
+ mkdir -p "$RUNTIME_DIR" || return 0
+ tmp="${RECOMMENDED_SYNC_STATUS}.tmp.$$"
+ if printf '{"status":"%s","stage":"%s","reason":"%s","checkedAt":%s}\n' \
+   "$result" "$stage" "$reason" "$now" > "$tmp"; then
+  mv -f "$tmp" "$RECOMMENDED_SYNC_STATUS" 2>/dev/null || rm -f "$tmp"
+ else
+  rm -f "$tmp"
+ fi
+}
+
+# The reconciler exits 75 when SafeShield is refreshing or another reconcile
+# holds its lock. These are deferred operations, not failed recommendations.
+reconcile_recommended_response() {
+ local response="$1" rc=0
+ [ -x "$RECOMMENDED_HELPER" ] || { write_recommended_sync_status failed helper_missing; return 1; }
+ "$RECOMMENDED_HELPER" "$response" || rc=$?
+ case "$rc" in
+  0) write_recommended_sync_status confirmed; return 0 ;;
+  75) return 0 ;; # helper writes its own progress state (or is already running)
+  *) write_recommended_sync_status failed apply_error; return 1 ;;
+ esac
+}
+
 status_sync() {
  local token body out now registered previous_registered previous_plan plan last_success next code expires protection_refresh_pending
  now="$(now_epoch)"; next=$((now + CHECK_INTERVAL_S))
@@ -265,8 +301,10 @@ status_sync() {
  # Hub-approved recommendations are reconciled by a separate local helper.
  # Keep the account state available even when SafeShield cannot be reached;
  # a failed reconciliation is retried on the next device sync.
- if [ -x "$RECOMMENDED_HELPER" ]; then
-  "$RECOMMENDED_HELPER" "$out" || log_message 'recommended rules will retry on next device sync'
+ if [ -n "$(json_value "$out" '@.recommended_rules.revision')" ]; then
+  if ! reconcile_recommended_response "$out"; then
+   log_message 'recommended rules will retry on next device sync'
+  fi
  fi
 
  if [ "$protection_refresh_pending" = true ]; then
@@ -279,6 +317,133 @@ status_sync() {
  fi
  rm -f "$body" "$out"
  return 0
+}
+
+
+
+# The Hub removes the assignment first and returns the new authoritative
+# allow-list state. If local reconciliation fails, the next poll still repairs
+# the router without recreating the removed assignment.
+recommended_revoke() {
+ local rule_id="${1:-}" token body out rc
+ case "$rule_id" in ''|0|*[!0-9]*) return 2 ;; esac
+ [ "${#rule_id}" -le 10 ] || return 2
+ [ "$(json_value "$STATE_FILE" '@.accountRegistered')" = true ] || return 1
+ token="$(credential_token)" || return 1
+ write_recommended_sync_status pending server_sync
+ body="$RUNTIME_DIR/recommended-revoke-request.$$.json"
+ out="$RUNTIME_DIR/recommended-revoke-response.$$.json"
+ printf '{}\n' > "$body" || return 1
+ if ! post_json "$API_BASE_URL/devices/recommended-rules/$rule_id/revoke" "$body" "$out" "$token"; then
+  write_recommended_sync_status delayed hub_unavailable
+  rm -f "$body" "$out" "${out}.log"
+  return 1
+ fi
+ rc=1
+ if [ "$(json_value "$out" '@.changed')" = true ]; then
+  if reconcile_recommended_response "$out"; then
+   rc=0
+  fi
+ else
+  write_recommended_sync_status failed invalid_response
+ fi
+ rm -f "$body" "$out" "${out}.log"
+ return "$rc"
+}
+
+# A lightweight authenticated poll; unlike status-sync it does not resolve
+# artifacts, licenses, or other device services on the Hub.
+recommended_fast_sync() {
+ local token body out revision changed server_revision rc rules_revision
+ mkdir -p "$RUNTIME_DIR" || return 1
+ [ "$(json_value "$STATE_FILE" '@.accountRegistered')" = true ] || return 0
+ [ -x "$RECOMMENDED_HELPER" ] || return 1
+ token="$(credential_token)" || return 1
+ revision=''
+ if [ -f "$RECOMMENDED_STATE" ] && [ ! -L "$RECOMMENDED_STATE" ]; then
+  revision="$(sed -n '1p' "$RECOMMENDED_STATE")"
+  case "$revision" in
+   *[!0-9a-f]*|'') revision='' ;;
+   *) [ "${#revision}" -eq 64 ] || revision='' ;;
+  esac
+ fi
+ # A state revision alone is not proof that SafeShield applied the rules.
+ # When a prior reconciliation lost its receipt, force a full payload from
+ # Hub rather than acknowledging 'changed: false' forever.
+ if [ -n "$revision" ] && {
+   [ "$(json_value "$RECOMMENDED_RECEIPT" '@.revision')" != "$revision" ] ||
+   [ "$(json_value "$RECOMMENDED_RECEIPT" '@.status')" != confirmed ];
+ }; then
+  revision=''
+ fi
+ rules_revision="$(json_value "${RECOMMENDED_CATALOG:-$RUNTIME_DIR/recommended-rules.catalog.json}" '@.rules_revision')"
+ case "$rules_revision" in *[!0-9a-f]*|'') rules_revision='' ;; *) [ "${#rules_revision}" -eq 64 ] || rules_revision='' ;; esac
+ body="$RUNTIME_DIR/recommended-poll-request.$$.json"
+ out="$RUNTIME_DIR/recommended-poll-response.$$.json"
+ if [ -z "$revision" ]; then write_recommended_sync_status pending server_sync; fi
+ # Only report after the local reconciler wrote a matching SafeShield
+ # receipt. Refresh confirmation every ten minutes, rather than writing to
+ # Hub's database on every 30-second revision check.
+ local report_due=0 report_revision='' report_rules='' report_at=0 now ack_state
+ ack_state="${RECOMMENDED_ACK_STATE:-$RUNTIME_DIR/recommended-rules.reported}"
+ if command -v now_epoch >/dev/null 2>&1; then now="$(now_epoch)"; else now="$(date +%s)"; fi
+ if [ -n "$revision" ] && [ "$(json_value "$RECOMMENDED_RECEIPT" '@.revision')" = "$revision" ] \
+    && [ "$(json_value "$RECOMMENDED_RECEIPT" '@.status')" = confirmed ]; then
+  if [ -f "$ack_state" ]; then
+   read -r report_revision report_rules report_at < "$ack_state" || true
+  fi
+  case "$report_at" in ''|*[!0-9]*) report_at=0 ;; esac
+  [ -n "$rules_revision" ] || rules_revision='-'
+  if [ "$report_revision" != "$revision" ] || [ "$report_rules" != "$rules_revision" ] \
+    || [ "$now" -lt "$report_at" ] || [ "$((now - report_at))" -ge 600 ]; then
+   report_due=1
+  fi
+  [ "$rules_revision" = '-' ] && rules_revision=''
+ fi
+ if [ "$report_due" -eq 1 ]; then
+  printf '{"revision":"%s","rules_revision":"%s","recommended_rules_ack":' "$revision" "$rules_revision" > "$body" || return 1
+  cat "$RECOMMENDED_RECEIPT" >> "$body" || return 1
+  printf '}\n' >> "$body" || return 1
+ else
+  printf '{"revision":"%s","rules_revision":"%s"}\n' "$revision" "$rules_revision" > "$body" || return 1
+ fi
+ if ! post_json "$API_BASE_URL/devices/recommended-rules" "$body" "$out" "$token"; then
+  write_recommended_sync_status delayed hub_unavailable
+  rm -f "$body" "$out" "${out}.log"
+  return 1
+ fi
+ # Mark the receipt reported only when Hub explicitly accepted it. If a
+ # newer assignment raced with this request, retain the receipt for retry.
+ if [ "$report_due" -eq 1 ] && [ "$(json_value "$out" '@.acknowledged')" = true ]; then
+  printf '%s %s %s\n' "$revision" "${rules_revision:--}" "$now" > "${ack_state}.tmp.$$" && \
+    mv -f "${ack_state}.tmp.$$" "$ack_state"
+ fi
+ changed="$(json_value "$out" '@.changed')"
+ case "$changed" in
+  false)
+   server_revision="$(json_value "$out" '@.revision')"
+   if [ -n "$revision" ] && [ "$server_revision" = "$revision" ]; then
+    write_recommended_sync_status confirmed
+    rc=0
+   else
+    write_recommended_sync_status failed invalid_response
+    rc=1
+   fi
+   ;;
+  true)
+   if reconcile_recommended_response "$out"; then
+    rm -f "$ack_state"
+    rc=0
+   else
+    rc=1
+   fi
+   ;;
+  *) write_recommended_sync_status failed invalid_response; rc=1 ;;
+ esac
+ # Defer transient local reconciler work instead of overwriting its stage.
+ [ "$rc" -eq 0 ] || log_message 'recommended rules reconciliation failed'
+ rm -f "$body" "$out" "${out}.log"
+ return "$rc"
 }
 
 pairing_session() {
@@ -313,16 +478,66 @@ retry_delay() {
  printf '%s\n' "$base"
 }
 wait_for() { local seconds="$1"; [ "$STOP_REQUESTED" -eq 1 ] && return 1; "$SLEEP_BIN" "$seconds" & WAIT_PID=$!; wait "$WAIT_PID" 2>/dev/null || true; WAIT_PID=''; [ "$STOP_REQUESTED" -eq 0 ]; }
-daemon() { local failures=0 delay; mkdir -p "$RUNTIME_DIR"; prepare_credential || true; wait_for "$STARTUP_DELAY_S" || return 0; while [ "$STOP_REQUESTED" -eq 0 ]; do if ssh_runtime_execute status-sync status_sync; then failures=0; delay="$CHECK_INTERVAL_S"; else delay="$(retry_delay "$failures")"; [ "$failures" -lt 4 ] && failures=$((failures + 1)); fi; wait_for "$delay" || break; done; }
-# Existing commands retain their behaviour; runtime-status is read-only.
-ssh_runtime_debug_arg "${1:-daemon}" "${2:-}" || { echo 'invalid argument' >&2; exit 2; }
+daemon() {
+ local failures=0 fast_failures=0 now next_full next_fast delay jitter random_hex fast_delay
+ mkdir -p "$RUNTIME_DIR"
+ prepare_credential || true
+ wait_for "$STARTUP_DELAY_S" || return 0
+ now="$(now_epoch)"
+ next_full="$now"
+ # Stagger first fast poll, avoiding a burst after mass reboot/release.
+ random_hex="$("$HEXDUMP_BIN" -n 1 -v -e '1/1 "%u"' /dev/urandom 2>/dev/null || true)"
+ case "$random_hex" in ''|*[!0-9]*) jitter=15 ;; *) jitter=$((random_hex % 21)) ;; esac
+ next_fast=$((now + RECOMMENDED_POLL_INTERVAL_S + jitter))
+ while [ "$STOP_REQUESTED" -eq 0 ]; do
+  now="$(now_epoch)"
+  if [ "$now" -ge "$next_full" ]; then
+   if ssh_runtime_execute status-sync status_sync; then
+    failures=0; delay="$CHECK_INTERVAL_S"
+   else
+    delay="$(retry_delay "$failures")"
+    [ "$failures" -lt 4 ] && failures=$((failures + 1))
+   fi
+   now="$(now_epoch)"
+   next_full=$((now + delay))
+   # Full sync already handled the recommended payload.
+   next_fast=$((now + RECOMMENDED_POLL_INTERVAL_S))
+  elif [ "$now" -ge "$next_fast" ]; then
+   if recommended_fast_sync; then
+    fast_failures=0; fast_delay="$RECOMMENDED_POLL_INTERVAL_S"
+   else
+    # Network/Hub failures must not turn into a tight retry loop.
+    case "$fast_failures" in 0) fast_delay=60 ;; 1) fast_delay=120 ;; *) fast_delay="$RECOMMENDED_POLL_MAX_RETRY_S" ;; esac
+    [ "$fast_failures" -lt 2 ] && fast_failures=$((fast_failures + 1))
+    log_message "recommended rules quick sync failed; retry in ${fast_delay}s"
+   fi
+   now="$(now_epoch)"; next_fast=$((now + fast_delay))
+  fi
+  now="$(now_epoch)"
+  if [ "$next_fast" -lt "$next_full" ]; then delay=$((next_fast - now)); else delay=$((next_full - now)); fi
+  [ "$delay" -ge 1 ] || delay=1
+  wait_for "$delay" || break
+ done
+}
+# Runtime diagnostics use an optional second `--debug` argument, except for
+# recommended-revoke, which takes a required numeric rule ID in that position.
+# Validate that ID here so the command reaches recommended_revoke(), where it
+# is checked again before any authenticated Hub request.
+if [ "${1:-daemon}" = recommended-revoke ]; then
+ case "${2:-}" in ''|0|*[!0-9]*) echo 'invalid rule ID' >&2; exit 2 ;; esac
+ [ "${#2}" -le 10 ] && [ "$#" -eq 2 ] || { echo 'invalid rule ID' >&2; exit 2; }
+else
+ ssh_runtime_debug_arg "${1:-daemon}" "${2:-}" || { echo 'invalid argument' >&2; exit 2; }
+fi
 case "${1:-daemon}" in
  prepare-credential) prepare_credential ;;
  bootstrap) bootstrap ;;
  status-sync|run-once) ssh_runtime_execute status-sync status_sync ;;
+ recommended-sync) recommended_fast_sync ;;
+ recommended-revoke) recommended_revoke "${2:-}" ;;
  pairing-session) pairing_session ;;
  status) [ -s "$STATE_FILE" ] && cat "$STATE_FILE" || printf '{}\n' ;;
  runtime-status) ssh_runtime_status ;;
  daemon) daemon ;;
- *) echo "usage: $0 {prepare-credential|daemon|bootstrap|status-sync|run-once|pairing-session|status|runtime-status} [--debug]" >&2; exit 2 ;;
+ *) echo "usage: $0 {prepare-credential|daemon|bootstrap|status-sync|recommended-sync|recommended-revoke RULE_ID|run-once|pairing-session|status|runtime-status} [--debug]" >&2; exit 2 ;;
 esac

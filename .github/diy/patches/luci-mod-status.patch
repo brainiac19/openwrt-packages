@@ -32,7 +32,7 @@
 -			{ name: 'view.status.include.30_network' },
 -			{ name: 'view.status.include.40_dhcp', title: _('Online Hosts'), deferFirstLoad: true },
 -			{ name: 'view.status.include.50_dsl' },
--			{ name: 'view.status.include.60_wifi' }
+-			{ name: 'view.status.include.60_wifi', title: _('Wireless'), deferFirstLoad: true }
 -		];
 -
 -		return Promise.all(includeModules.map(L.bind(function(spec) {

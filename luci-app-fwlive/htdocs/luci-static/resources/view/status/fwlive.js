@@ -913,7 +913,8 @@ return view.extend({
 				readGeneration !== this.loggingStatusReadGeneration
 			)
 				return;
-			/* Keep last-known toolbar; unknown until the first successful fetch. */
+			/* Keep last-known toolbar on refresh failure. First-fetch failure
+			 * leaves status unknown and sets loggingNotice for the toolbar. */
 			if (!this.loggingNotice) {
 				this.loggingNotice = this.loggingStatus
 					? _('Could not refresh logging status; showing the last known state.')
@@ -1382,7 +1383,7 @@ return view.extend({
 		}
 
 		const cap = this.ingestCap();
-		if (this.entries.length >= cap && cap > 0) bits.push(_('buffer full'));
+		if (this.tablePaused && this.entries.length >= cap && cap > 0) bits.push(_('buffer full'));
 		if (this.ensureRenderScheduler().isFloodSuppressed())
 			bits.push(_('table refresh throttled'));
 		if (this.weakDevice && this.rowLimit > constants.WEAK_DEVICE_DISPLAY_ROW_CAP)
@@ -1812,9 +1813,10 @@ return view.extend({
 
 	compactCountText(filtered) {
 		const stored = this.entries.length;
-		/* Keep the stored-buffer denominator tied to the user's Limit. A weak
-		 * device's rendered-row cap is called out separately in statusSuffix(). */
-		const limit = this.rowLimit;
+		/* Live mode keeps the stored-buffer denominator tied to the user's Limit.
+		 * While paused, use the real ingest cap; a weak device's rendered-row cap
+		 * is called out separately in statusSuffix(). */
+		const limit = this.tablePaused ? this.ingestCap() : this.rowLimit;
 		const stale = this.stalenessHint();
 		const suffix = this.statusSuffix() + (stale ? ' — ' + stale : '');
 		/* The filter state contains both visible rows and the full match count, so
@@ -1925,8 +1927,7 @@ return view.extend({
 		}
 
 		/* Paint the existing cache immediately; resolving only fills misses. */
-		if (this.tablePaused) this.updateStatus();
-		else this.renderRows(true);
+		this.renderRows(true);
 		if (this.showHostnames) this.resolveHostnamesForEntries(this.filteredRows());
 	},
 

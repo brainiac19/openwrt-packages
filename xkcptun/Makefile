@@ -8,8 +8,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkcptun
-PKG_VERSION:=1.09.561
-PKG_RELEASE:=5
+PKG_VERSION:=1.10.566
+PKG_RELEASE:=6
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/liudf0716/xkcptun/tar.gz/$(PKG_VERSION)?

@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-trafficctl
-PKG_VERSION:=1.22.0
-PKG_RELEASE:=7
+PKG_VERSION:=1.23.0
+PKG_RELEASE:=8
 
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Denis Iusupov <yusdyr@gmail.com>
@@ -57,5 +57,6 @@ fi
 exit 0
 endef
 
-# call BuildPackage - OpenWrt buildroot will pick up the standard LuCI layout
-$(eval $(call BuildPackage,$(PKG_NAME)))
+# No explicit $(eval $(call BuildPackage,...)) here: luci.mk already calls it
+# for the main package, so the explicit call was a duplicate. Spotted by
+# @ntbowen in #73.

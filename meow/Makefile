@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: MIT
 #
-# Copyright (C) 2026 ImmortalWrt.org
 #
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=meow
-PKG_BASE_VERSION?=0.22.0
-PKG_SOURCE_VERSION?=5d7156438bf68636a5b1d00869524726fff03633
-PKG_VERSION?=$(PKG_BASE_VERSION).202610130311
-PKG_RELEASE?=1
+PKG_VERSION:=0.25.0
+PKG_RELEASE:=8
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/meow-rs/meow-rs/tar.gz/$(PKG_SOURCE_VERSION)?
+PKG_SOURCE_URL:=https://codeload.github.com/meow-rs/meow-rs/tar.gz/v$(PKG_VERSION)?
 PKG_HASH:=skip
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 

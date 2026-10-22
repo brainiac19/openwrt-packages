@@ -571,7 +571,8 @@ jobs:
           sed -i -e "s/body\[theme=dark\]/:root[data-darkmode=true]/g" \
            -e "s/body\[theme=light\]/:root[data-darkmode=false]/g" luci-app-quickstart/htdocs/luci-static/quickstart/style.css
           sed -i 's/body.getAttribute("theme");if(o)switch(o){case"dark":case"light":return o}/documentElement.getAttribute("data-darkmode");if(o)switch(o){case"true":return"dark";case"false":return"light"}/g' luci-app-quickstart/htdocs/luci-static/quickstart/index.js
-          sed -i 's/icon!=="baby"/icon!==""/' luci-app-quickstart/htdocs/luci-static/quickstart/index.js
+          sed -i -e 's/icon!=="baby"/icon!==""/' -e "s,admin/store,admin/services/store," luci-app-quickstart/htdocs/luci-static/quickstart/index.js
+
           sed -i 's/+php8-cgi /+php8-cgi +php8-fpm /' luci-theme-spectra/Makefile
           sed -i 's/+luci-base/+luci-base +luci-app-oui +luci-mod-dashboard/' luci-mod-status/Makefile
           sed -i \

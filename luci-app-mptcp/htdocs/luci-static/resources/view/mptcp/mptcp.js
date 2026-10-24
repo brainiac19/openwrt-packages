@@ -17,6 +17,17 @@ var callSystemBoard = rpc.declare({
 });
 
 
+// 040-multipath-weight's reading of network.<iface>.multipath_weight:
+// not a number is unset (100), 0 is 1, over 256 is 256
+function normalizeWeightValue(value) {
+	if (value == null || value === '')
+		return value;
+	if (!/^[0-9]+$/.test(value))
+		return null;
+	value = +value;
+	return String(value < 1 ? 1 : (value > 256 ? 256 : value));
+}
+
 return L.view.extend({
     load: function() {
 	return Promise.all([
@@ -392,12 +403,21 @@ return L.view.extend({
 	o.rmempty = false;
 
 	o = s.option(form.Value, "multipath_weight", _("Weight"), _("Only used by *weight schedulers/path managers. Ignored if no weight scheduler is selected.") + '<br />' + _("A weight >100 make it more attractive, a weight <100 make it less attractive. Max 256"));
-	o.datatype = "uinteger";
+	// 1 to 256, as "ip route" takes it: the schedulers read 0 as no weight
+	// (neutral 100) and add the weight to a signed counter
+	o.datatype = "and(uinteger,range(1,256))";
 	// 100 shown as a placeholder, not a default: with a default every Save
 	// of this page wrote multipath_weight='100' on each interface that had
 	// none. Unset means 100 for every reader (omr-weight-sync, mqvpn).
 	o.placeholder = "100";
 	o.rmempty = true;
+	// A weight stored out of range (0, 300) failed the datatype and
+	// blocked every save of this page: shown as 040-multipath-weight reads
+	// it. A save that doesn't change the field leaves a number unwritten
+	// and drops what is not one
+	o.cfgvalue = function(section_id) {
+		return normalizeWeightValue(uci.get('network', section_id, 'multipath_weight'));
+	};
 
 	return m.render();
     }

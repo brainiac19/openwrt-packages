@@ -1,0 +1,32 @@
+--- luci-theme-vantage/htdocs/luci-static/vantage/vantage.css
++++ luci-theme-vantage/htdocs/luci-static/vantage/vantage.css
+@@ -1988,7 +1994,28 @@ html:not([data-darkmode="true"]) .vt-login-page {
+ 		linear-gradient(90deg, rgba(20, 23, 26, .04) 1px, transparent 1px) 0 0 / 32px 32px,
+ 		var(--bg);
+ }
+-.vt-login { width: min(380px, 100%); }
++.vt-login {
++	width: min(380px, 100%);
++	z-index: 1;
++}
++.vt-login-page{
++	background:none !important;
++}
++.vt-login-page::before {
++	content: "";
++	position: absolute;
++	inset: 0;
++	background-image: url('/luci-static/vantage/pattern.svg');
++	background-size: 440px auto;
++	background-position: center;
++	opacity: 0.4;
++}
++html:not([data-darkmode="true"]) .vt-login-page::before {
++	opacity: 0.7;
++}
++#packages {
++ width: 100% !important;
++}
+ .vt-login-card {
+ 	padding: var(--sp-6);
+ 	background: var(--s1);

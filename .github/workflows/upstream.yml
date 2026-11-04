@@ -491,7 +491,7 @@ jobs:
         if: github.event.inputs.ssh == 'true'
       - name: Apply patches
         run: |
-          find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%'"|| true
+          find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%'"
           #find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -0 -t -n 1 git apply -p1 --recount --ignore-whitespace --unsafe-paths --verbose
       - name: Modify
         run: |
@@ -575,7 +575,7 @@ jobs:
           sed -i -e 's/icon!=="baby"/icon!==""/' -e "s,admin/store,admin/services/store," luci-app-quickstart/htdocs/luci-static/quickstart/index.js
 
           sed -i 's/+php8-cgi /+php8-cgi +php8-fpm /' luci-theme-spectra/Makefile
-          sed -i 's/+luci-base/+luci-base +luci-app-oui +luci-mod-dashboard/' luci-mod-status/Makefile
+          sed -i 's/+luci-base/+luci-base +luci-app-oui +luci-app-vantage/' luci-mod-status/Makefile
           sed -i \
             -e 's/data-page=admin-dashboard/data-page=admin-status-dashboard/g' \
             -e '$a\
@@ -591,6 +591,7 @@ jobs:
           luci-app-homeproxy/root/etc/homeproxy/scripts/generate_client.uc
           sed -i 's,https://raw.githubusercontent.com,https://v4.gh-proxy.org/https://raw.githubusercontent.com,g' \
           luci-app-homeproxy-pro/root/etc/homeproxy/scripts/generator/route.uc
+          sed -i "s/color:#0000;/color:#0000 !important;background:transparent !important;/g" luci-app-footstrap-files/htdocs/luci-static/resources/view/footstrap-files/vendor/pce/layout.css
           OLD="homeproxy"
           NEW="homeproxy-pro"
           find ./luci-app-homeproxy-pro/* -depth -name "*${OLD}*" | while IFS= read -r item; do

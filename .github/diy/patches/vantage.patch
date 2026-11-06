@@ -1,3 +1,17 @@
+--- a/luci-app-vantage/htdocs/luci-static/resources/view/vantage/overview.js
++++ b/luci-app-vantage/htdocs/luci-static/resources/view/vantage/overview.js
+@@ -583,8 +583,8 @@ return view.extend({
+ 	asidePage: function(media, themeHere, hasLuciDashboard, hasOverview) {
+ 		var theme = (typeof media === 'string') ? media.replace(/\/+$/, '').replace(/^.*\//, '') : '';
+ 		if (!theme || theme === 'vantage' || themeHere !== true) return null;
+-		if (hasLuciDashboard === true) return LUCI_DASHBOARD.slice();
+-		return hasOverview === false ? null : LUCI_OVERVIEW.slice();
++		// if (hasLuciDashboard === true) return LUCI_DASHBOARD.slice();
++		// return hasOverview === false ? null : LUCI_OVERVIEW.slice();
+ 	},
+ 
+ 	/* before load() asks for anything. Under Vantage (or an unnamed theme)
+
 --- a/luci-app-vantage/root/usr/share/luci/menu.d/zz-luci-app-vantage.json
 +++ b/luci-app-vantage/root/usr/share/luci/menu.d/zz-luci-app-vantage.json
 @@ -1,5 +1,5 @@
@@ -97,7 +111,7 @@
  }
  /* Card padding supplies the space after the final paragraph. */
  .cbi-section > p:last-child { margin-bottom: 0; }
-@@ -1982,7 +1988,25 @@ html:not([data-darkmode="true"]) .vt-login-page {
+@@ -1982,7 +1988,28 @@ html:not([data-darkmode="true"]) .vt-login-page {
  }
  /* the backdrop (login.js: packets or starfield), between the grid and the card */
  .vt-login-sky { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -120,6 +134,9 @@
 +}
 +#packages {
 + width: 100% !important;
++}
++vt-brand-word {
++ margin:0;
 +}
  .vt-login-card {
  	padding: var(--sp-6);
@@ -148,23 +165,21 @@
 
 --- a/luci-theme-vantage/ucode/template/themes/vantage/header.ut
 +++ b/luci-theme-vantage/ucode/template/themes/vantage/header.ut
-@@ -16,6 +16,8 @@
- 	const found = !!dispatched?.action?.type && dispatched.action.type != 'firstchild';
- 	const page_title = !authed ? null : !found ? _('Not found') : dispatched?.title ? striptags(_(dispatched.title)) : null;
- 	const lang = entityencode(dispatcher.lang ?? 'en', true);
-+	const boardinfo = ubus.call("system", "board");
-+	const hostname = striptags(boardinfo?.hostname ?? '?');
+@@ -53,6 +53,8 @@
+ 		});
+ 		return would ? 'relogin' : 'no';
+ 	})();
++const boardinfo = ubus.call("system", "board");
++const hostname = striptags(boardinfo?.hostname ?? '?');
  -%}
  <!DOCTYPE html>
- <html lang="{{ lang }}" data-darkmode="true">
-@@ -26,8 +28,8 @@
- <title>{{ page_title ? entityencode(page_title, true) + ' · ' : '' }}LuCI</title>
- <script>
- (function (r) {
--	var p = 'auto', rail = '';
--	try { p = localStorage.getItem('vantage.theme') || 'auto'; rail = localStorage.getItem('vantage.rail') || ''; } catch (e) {}
-+	var p = 'auto', rail = 'pinned';
-+	try { p = localStorage.getItem('vantage.theme') || 'auto'; rail = localStorage.getItem('vantage.rail') || 'pinned'; } catch (e) {}
+ <html lang="{{ lang }}" data-darkmode="true" data-vt-look-theme="{{ look_theme }}" data-vt-look-login="{{ look_login }}" data-vt-look-backdrop="{{ look_backdrop }}" data-vt-look-chart="{{ look_chart }}" data-vt-look-layout="{{ look_layout }}" data-vt-look-save="{{ look_save }}">
+@@ -73,7 +75,7 @@
+ 		return ok[0];
+ 	}
+ 	var p = look('theme', 'vantage.theme.own', 'vantage.theme', [ 'auto', 'light', 'dark' ]), rail = '';
+-	try { rail = localStorage.getItem('vantage.rail') || ''; } catch (e) {}
++	try { rail = localStorage.getItem('vantage.rail') || 'pinned'; } catch (e) {}
  	var dark = (p === 'dark') || (p !== 'light' && !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
  	r.setAttribute('data-darkmode', dark ? 'true' : 'false');
  	r.setAttribute('data-theme', p);
@@ -181,18 +196,28 @@
 +			<circle cx="21.5" cy="10.5" r="1.9" class="vt-brand-dot"></circle>
 +			<circle cx="21.5" cy="21.5" r="1.9" class="vt-brand-dot"></circle>
 +			</svg>
-+			<span class="vt-brand-word">{{ hostname }}</span>
++			<h3 class="vt-brand-word">{{ hostname }}</h3>
  		</a>
  		<ul class="vt-rail-list" id="vt-rail-list"></ul>
  		<div class="vt-rail-foot">
 
 --- a/luci-theme-vantage/ucode/template/themes/vantage/sysauth.ut
 +++ b/luci-theme-vantage/ucode/template/themes/vantage/sysauth.ut
-@@ -37,7 +37,14 @@
+@@ -17,6 +17,8 @@
+ 	const look = (opt, ok) => { const v = uci.get('vantage_theme', 'appearance', opt); return (type(v) == 'string' && index(ok, v) >= 0) ? v : ''; };
+ 	const look_theme = look('theme', [ 'auto', 'light', 'dark' ]);
+ 	const look_login = look('login', [ 'grid', 'stars', 'none' ]);
++	const boardinfo = ubus.call("system", "board");
++	const hostname = striptags(boardinfo?.hostname ?? '?');
+ -%}
+ <!DOCTYPE html>
+ <html lang="{{ entityencode(dispatcher.lang ?? 'en', true) }}" data-darkmode="true" data-vt-look-theme="{{ look_theme }}" data-vt-look-login="{{ look_login }}">
+@@ -37,8 +39,18 @@
  <main class="vt-login">
  	<div class="vt-login-card">
  		<div class="vt-login-head">
 -			<svg class="vt-login-mark" viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="7" class="vt-brand-tile"/><path d="M9 10.5 16 22" class="vt-brand-l"/><path d="M16 22 23 10.5" class="vt-brand-r"/><circle cx="23" cy="10.5" r="1.9" class="vt-brand-dot"/></svg>
+-			<h1 class="vt-login-title">{{ entityencode(_('Authorization Required'), true) }}</h1>
 +			<svg class="vt-login-mark" viewBox="0 0 32 32" width="44" height="44" aria-hidden="true">
 +			<rect x="1" y="1" width="30" height="30" rx="7" class="vt-brand-tile"></rect>
 +			<path d="M10 10.5 10 21.5" class="vt-brand-l"></path>
@@ -201,9 +226,13 @@
 +			<circle cx="21.5" cy="10.5" r="1.9" class="vt-brand-dot"></circle>
 +			<circle cx="21.5" cy="21.5" r="1.9" class="vt-brand-dot"></circle>
 +			</svg>
- 			<h1 class="vt-login-title">{{ entityencode(_('Authorization Required'), true) }}</h1>
++			<div>
++				<h1 class="vt-login-title">{{ hostname }}</h1>
++				<p class="vt-login-sub"><span class="vt-login-dot" aria-hidden="true"></span>{{ entityencode(_('Authorization Required'), true) }}</p>
++			</div>
  		</div>
  
+ {% if (fuser): %}
 diff --git a/luci-theme-vantage/htdocs/luci-static/vantage/pattern.svg b/luci-theme-vantage/htdocs/luci-static/vantage/pattern.svg
 new file mode 100644
 index 000000000..72eb03cdc

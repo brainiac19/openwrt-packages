@@ -94,7 +94,7 @@ jobs:
           ) &
           (
           git_clone https://github.com/Openwrt-Passwall/openwrt-passwall && mvdir openwrt-passwall
-          git_clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages && mvdir openwrt-passwall-packages
+          git_clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages && mvdir openwrt-passwall-packages;rm -rf xray-core
           git_clone https://github.com/sbwml/luci-app-mosdns openwrt-mos && mv -n openwrt-mos/{*mosdns,geo2txt} ./; rm -rf openwrt-mos
           git_clone https://github.com/Lienol/openwrt-package liep && rm -rf liep/other
           git_clone https://github.com/rufengsuixing/luci-app-autoipsetadder
@@ -216,6 +216,8 @@ jobs:
           git_clone https://github.com/4IceG/luci-app-sms-tool-js sms-tool-js && mvdir sms-tool-js
           git_clone https://github.com/4IceG/luci-app-crontab-wizard crontab-wizard && mvdir crontab-wizard
           git_clone https://github.com/4IceG/luci-app-lite-watchdog lite-watchdog && mvdir lite-watchdog
+          git_clone https://github.com/itsmaiGe/luci-theme-7dollar
+          git_clone https://github.com/mrjoechen/luci-theme-carbon
 
           ) &
           (
@@ -432,7 +434,7 @@ jobs:
           (
           git_sparse_clone master "https://github.com/x-wrt/com.x-wrt" luci-app-macvlan luci-app-xwan
           # git_sparse_clone master "https://github.com/obsy/packages" oscam luci-proto-wwan 3ginfo
-          git_sparse_clone istoreos-24.10 "https://github.com/jjm2473/packages" utils/dockerd
+          git_sparse_clone istoreos-25.12 "https://github.com/jjm2473/packages" utils/dockerd
           git_sparse_clone master "https://github.com/teleofis/teleofis-feed" luci packages; rm -rf luci/luci-app-{pollmydevice,simman*,strongswan,pingcontrol} luci/luci-theme-teleofis; mvdir luci; \
           rm -rf packages/{base-files*,*lt70*,cp210x-cfg,fbfdownloader,pollmydevice,simman*,pingcontrol}; mvdir packages
           ) &
